@@ -1,0 +1,40 @@
+name: Courants Tunisie
+
+on:
+  schedule:
+    - cron: "40 17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  courants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer la boite a outils Copernicus
+        run: pip install copernicusmarine numpy
+      - name: Preparer le fichier des courants
+        env:
+          COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+          COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+        run: python preparer_courants.py courants_tunisie.grb2
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view courants >/dev/null 2>&1 || gh release create courants --title "Courants Tunisie" --notes "Courants Copernicus Marine pour Meteo Marine Tunisie"
+          gh release upload courants courants_tunisie.grb2 --clobber
+      - name: Garder le robot actif
+        run: |
+          date -u +"%Y-%m-%d %H:%M UTC" > derniere_mise_a_jour.txt
+          git config user.name "robot-courants"
+          git config user.email "robot-courants@users.noreply.github.com"
+          git add derniere_mise_a_jour.txt
+          git commit -m "Courants du jour" || true
+          git push || true
