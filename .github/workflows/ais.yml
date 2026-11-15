@@ -1,0 +1,37 @@
+name: AIS Tunisie
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ais
+  cancel-in-progress: false
+
+jobs:
+  ais:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install websockets
+      - name: Ecouter les navires
+        env:
+          AISSTREAM_KEY: ${{ secrets.AISSTREAM_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ais -p ais_tunisie.json -O precedent.json 2>/dev/null || echo '{}' > precedent.json
+          python robot_ais.py ais_tunisie.json precedent.json
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view ais >/dev/null 2>&1 || gh release create ais --title "AIS Tunisie" --notes "Positions AIS autour de la Tunisie, toutes les 15 min."
+          gh release upload ais ais_tunisie.json --clobber
