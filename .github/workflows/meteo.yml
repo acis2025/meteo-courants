@@ -1,0 +1,38 @@
+# Robot meteo : verifie chaque heure si NOAA a publie un nouveau run GFS et le publie aussitot.
+name: Meteo Tunisie
+
+on:
+  schedule:
+    - cron: "20 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: meteo
+  cancel-in-progress: false
+
+jobs:
+  meteo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install certifi
+      - name: Telecharger vent + vagues (NOAA) si nouveau run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download meteo -p run.txt -O run_publie.txt 2>/dev/null || true
+          python preparer_meteo.py .
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f rien_a_faire ]; then echo "Deja a jour"; exit 0; fi
+          gh release view meteo >/dev/null 2>&1 || gh release create meteo --title "Meteo Tunisie" --notes "Vent + vagues NOAA (zone Tunisie), nouveau run publie des sa sortie."
+          gh release upload meteo Tunisie_1h.grb2 Tunisie_3h.grb2 run.txt --clobber
