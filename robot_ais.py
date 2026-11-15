@@ -1,7 +1,7 @@
 """
 Robot AIS — A.C.I.S Marine / Météo Marine Tunisie.
-Lancé toutes les 15 min par GitHub (.github/workflows/ais.yml) : écoute aisstream.io ~80 s sur la zone
-Tunisie, fusionne avec la photo précédente et écrit ais_tunisie.json (navires vus depuis moins d'une heure).
+Lancé toutes les 15 min par GitHub (.github/workflows/ais.yml) : écoute aisstream.io 4 min sur la zone
+Tunisie, fusionne avec la photo précédente et écrit ais_tunisie.json (navires vus depuis moins de 3 heures).
 Clé aisstream : secret GitHub AISSTREAM_KEY (jamais dans l'appli).
 """
 import asyncio
@@ -13,8 +13,8 @@ import time
 import websockets
 
 ZONE = [[30.0, 7.0], [39.0, 14.5]]
-DUREE_S = 80
-GARDER_S = 3600
+DUREE_S = 240          # 4 min d'écoute : les stations captent les navires par vagues
+GARDER_S = 3 * 3600   # un navire reste affiché 3 h après sa dernière position (mouillage, pêche)
 SORTIE = sys.argv[1] if len(sys.argv) > 1 else "ais_tunisie.json"
 PRECEDENT = sys.argv[2] if len(sys.argv) > 2 else None
 
