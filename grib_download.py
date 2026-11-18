@@ -29,7 +29,7 @@ import urllib.request
 # Zone : toutes les côtes tunisiennes + haute mer (Pantelleria, Lampedusa,
 # golfe de Gabès, frontière libyenne).
 # ---------------------------------------------------------------------------
-ZONE_TUNISIE = {"nord": 39.0, "sud": 30.0, "ouest": 7.0, "est": 14.0}
+ZONE_TUNISIE = {"nord": 42.0, "sud": 30.0, "ouest": 4.0, "est": 20.0}
 
 NOMADS = "https://nomads.ncep.noaa.gov"
 # Courants de surface Copernicus Marine (Méditerranée), préparés chaque jour par le robot GitHub (robot_courants/)
