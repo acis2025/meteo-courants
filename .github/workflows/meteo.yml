@@ -35,4 +35,5 @@ jobs:
         run: |
           if [ -f rien_a_faire ]; then echo "Deja a jour"; exit 0; fi
           gh release view meteo >/dev/null 2>&1 || gh release create meteo --title "Meteo Tunisie" --notes "Vent + vagues NOAA (zone Tunisie), nouveau run publie des sa sortie."
+          if [ -f Ciel_1h.grb2 ] && [ -f Ciel_3h.grb2 ]; then gh release upload meteo Ciel_1h.grb2 Ciel_3h.grb2 --clobber; fi
           gh release upload meteo Tunisie_1h.grb2 Tunisie_3h.grb2 run.txt --clobber

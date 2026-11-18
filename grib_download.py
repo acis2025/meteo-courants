@@ -100,6 +100,19 @@ def modele_gfs(max_h: int = 384, pas: int = 3, pas_long: int = 6) -> Modele:
     )
 
 
+def modele_ciel(max_h: int = 384, pas: int = 3, pas_long: int = 6) -> Modele:
+    """Pluie (intensité moyenne, kg/m²/s) + nébulosité totale (%) ; rien à l'heure 0."""
+    return Modele(
+        nom="Pluie et nuages (GFS 0.25°)",
+        script="filter_gfs_0p25.pl",
+        dossier="atmos",
+        fichier="gfs.t{hh}z.pgrb2.0p25.f{fff}",
+        variables=["PRATE", "TCDC"],
+        niveaux=["surface", "entire_atmosphere"],
+        echeances=[e for e in _echeances(max_h, pas, pas_long) if e > 0],
+    )
+
+
 def modele_vagues(max_h: int = 384, pas: int = 3, grille: str = "0p16", pas_long: int = 6) -> Modele:
     """grille "0p16" = plus précise ; "0p25" = même grille que GFS (fusion en 1 fichier)."""
     return Modele(

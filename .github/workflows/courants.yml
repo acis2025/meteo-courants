@@ -30,6 +30,7 @@ jobs:
         run: |
           gh release view courants >/dev/null 2>&1 || gh release create courants --title "Courants Tunisie" --notes "Courants Copernicus Marine pour Meteo Marine Tunisie"
           gh release upload courants courants_tunisie.grb2 --clobber
+          if [ -f marees_tunisie.grb2 ]; then gh release upload courants marees_tunisie.grb2 --clobber; fi
       - name: Garder le robot actif
         run: |
           date -u +"%Y-%m-%d %H:%M UTC" > derniere_mise_a_jour.txt
