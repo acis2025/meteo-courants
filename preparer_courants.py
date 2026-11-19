@@ -41,7 +41,10 @@ def main():
     ds = ds.sortby("latitude").sortby("longitude")
     ds = ds.isel(latitude=slice(None, None, PAS_POINTS), longitude=slice(None, None, PAS_POINTS))
     temps = [dt.datetime.fromtimestamp(t.astype("datetime64[s]").astype(int), dt.timezone.utc) for t in ds["time"].values]
-    garder = [k for k, t in enumerate(temps) if round((t - temps[0]).total_seconds() / 3600) % PAS_HEURES == 0]
+    # heures RONDES multiples de 3 h UTC (00, 03, 06…) = les mêmes que la météo GFS au-delà de +120 h.
+    # Sinon XyGrib affiche des images « courant seul, sans vent » (ex. 14:00 entre 12:00 et 15:00).
+    temps = [dt.datetime.fromtimestamp(int(t.timestamp() / 3600 + 0.5) * 3600, dt.timezone.utc) for t in temps]
+    garder = [k for k, t in enumerate(temps) if t.hour % PAS_HEURES == 0]
     lat, lon = ds["latitude"].values, ds["longitude"].values
     ni, nj = len(lon), len(lat)
     dlat = float(np.round((lat[-1] - lat[0]) / (nj - 1), 6))
