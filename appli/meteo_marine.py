@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 import grib_download as gd
 import heure
@@ -285,11 +286,29 @@ def auto_installation() -> bool:
     ici = os.path.abspath(sys.executable)
     if os.path.normcase(ici) == os.path.normcase(cible):
         return False
-    try:
+    def copier():
         os.makedirs(DOSSIER_INSTALL, exist_ok=True)
         shutil.copy2(ici, cible)
+    try:
+        copier()
     except OSError:
-        return False  # déjà ouvert ailleurs : on continue depuis ici
+        # l'ancienne version est sans doute ouverte (fichier verrouillé) : on la ferme, sans nous fermer
+        # nous-mêmes (un .exe PyInstaller = 2 processus : nous et notre lanceur), puis on réessaie
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "MeteoMarineTN.exe",
+                            "/FI", f"PID ne {os.getpid()}", "/FI", f"PID ne {os.getppid()}"],
+                           creationflags=0x08000000, timeout=20, capture_output=True)
+        except Exception:
+            pass
+        for _ in range(12):
+            time.sleep(0.5)
+            try:
+                copier()
+                break
+            except OSError:
+                continue
+        else:
+            return False  # vraiment impossible : on continue depuis ici
     ps = (
         "$w=New-Object -ComObject WScript.Shell;"
         "foreach($d in @([Environment]::GetFolderPath('Desktop'),"
