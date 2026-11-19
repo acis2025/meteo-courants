@@ -49,7 +49,7 @@ def lire_page(nom: str) -> str:
 
 
 REGLAGES_DEFAUT = {"jours": 7, "pas": 3}
-DELAI_PUBLICATION_H = 4      # un run NOAA (00/06/12/18 UTC) est complet ~4 h après son heure
+DELAI_PUBLICATION_H = 5.5    # run NOAA 00/06/12/18 UTC : publié par le robot ~5 h 20 après (mesuré nov. 2026)
 REESSAI_S = 600              # hors ligne : nouvel essai automatique au plus toutes les 10 min
 
 
