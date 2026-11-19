@@ -1,0 +1,37 @@
+# Mise a jour EN LIGNE du programme client (PC + telephone) : a chaque changement du dossier appli/,
+# le robot fabrique maj.zip, le signe avec le secret MAJ_CLE et le publie. Les clients le prennent seuls.
+name: Appli (mise a jour en ligne)
+
+on:
+  push:
+    branches: [main]
+    paths: ["appli/**", "publier_appli.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: appli
+  cancel-in-progress: false
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fabriquer et signer maj.zip
+        env:
+          MAJ_CLE: ${{ secrets.MAJ_CLE }}
+        run: python publier_appli.py .
+      - name: Publier (maj.json en dernier)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view appli >/dev/null 2>&1 || gh release create appli --title "Programme (mises a jour en ligne)" --notes "Code du programme PC et telephone, signe. Pris automatiquement par les clients."
+          gh release upload appli maj.zip maj.sig --clobber
+          gh release upload appli maj.json --clobber

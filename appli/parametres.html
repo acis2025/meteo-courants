@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Paramètres — Météo Marine Tunisie</title>
+<style>
+  :root { --bleu:#1b265e; --bleu2:#2c3d8f; --vert:#128c4a; --rouge:#b3261e; --gris:#5b6275; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:#1d2233; }
+  body { background:linear-gradient(170deg,#eef2fb 0%,#dfe7f7 55%,#cfdcf2 100%); }
+  body::before { content:""; position:fixed; inset:0; background:url(/logo.png) center 38%/78vmin no-repeat;
+                 opacity:.07; filter:blur(3px); pointer-events:none; }
+  main { position:relative; max-width:480px; margin:0 auto; padding:18px 18px 28px; min-height:100%;
+         display:flex; flex-direction:column; gap:14px; }
+  header { display:flex; align-items:center; gap:12px; }
+  header img { width:80px; height:80px; border-radius:50%; background:#fff; box-shadow:0 2px 8px #1b265e22; }
+  header b { display:block; font-size:19px; color:var(--bleu); letter-spacing:.3px; }
+  header span { font-size:12.5px; color:var(--gris); }
+  .carte { background:#ffffffe8; border-radius:16px; padding:16px; box-shadow:0 3px 14px #1b265e1a; }
+  #nom { font-size:22px; font-weight:700; color:var(--bleu); text-align:center; word-break:break-word; }
+  #abo { text-align:center; font-size:14px; margin-top:4px; }
+  .ok { color:var(--vert); } .ko { color:var(--rouge); }
+  .choix { display:flex; gap:10px; margin:4px 0 14px; }
+  .choix label { flex:1; font-size:12.5px; color:var(--gris); }
+  select, input { width:100%; font-size:17px; padding:11px 12px; border:1.5px solid #c9d1e6; border-radius:11px;
+                  background:#fff; color:#1d2233; margin-top:4px; }
+  .seg { display:flex; margin-top:4px; border:1.5px solid #c9d1e6; border-radius:11px; overflow:hidden; }
+  .seg button { flex:1; border:0; background:#fff; font-size:17px; padding:11px 0; color:var(--bleu); }
+  .seg button.on { background:var(--bleu); color:#fff; font-weight:700; }
+  #go { width:100%; border:0; border-radius:16px; padding:22px 10px; font-size:21px; font-weight:800; letter-spacing:.5px;
+        color:#fff; background:linear-gradient(180deg,var(--bleu2),var(--bleu)); box-shadow:0 6px 18px #1b265e55; }
+  #go:active { transform:scale(.98); }
+  #go:disabled { opacity:.55; }
+  #go small { display:block; font-size:12.5px; font-weight:500; opacity:.85; margin-top:4px; letter-spacing:0; }
+  .barre { height:10px; background:#e3e8f4; border-radius:6px; overflow:hidden; margin-top:12px; display:none; }
+  .barre i { display:block; height:100%; width:0; background:linear-gradient(90deg,#3c8ce7,#00b4a0); transition:width .4s; }
+  #msg { font-size:13px; color:var(--gris); text-align:center; margin-top:8px; min-height:18px; }
+  #carte { width:100%; margin-top:10px; border:1.5px solid var(--bleu); background:#fff; color:var(--bleu);
+           border-radius:13px; padding:13px; font-size:16px; font-weight:600; display:none; }
+  h3 { margin:0 0 10px; font-size:16px; color:var(--bleu); }
+  #act button { width:100%; margin-top:12px; border:0; border-radius:12px; padding:14px; font-size:17px; font-weight:700;
+                background:var(--vert); color:#fff; }
+  #code { letter-spacing:3px; text-transform:uppercase; -webkit-text-security:disc; }
+  #code.voir { -webkit-text-security:none; }
+  .ligne { display:flex; gap:8px; align-items:flex-end; }
+  .ligne button.voir { width:auto !important; background:#e3e8f4 !important; color:var(--bleu) !important; padding:12px 14px !important; margin:0 !important; font-size:14px !important; }
+  #actmsg { font-size:13.5px; margin-top:8px; text-align:center; min-height:18px; }
+  #appareil { font-size:11px; color:var(--gris); text-align:center; margin-top:6px; }
+  #retour { border:0; background:var(--bleu); color:#fff; font-size:15px; font-weight:700; border-radius:22px;
+             padding:10px 16px; box-shadow:0 3px 10px #1b265e44; }
+  .titre { flex:1; }
+  .note { font-size:12.5px; color:var(--gris); margin:0 0 12px; line-height:1.45; }
+  #changer { width:100%; margin-top:12px; border:1.5px solid var(--bleu); background:#fff; color:var(--bleu);
+             border-radius:12px; padding:11px; font-size:15px; font-weight:600; }
+  footer { margin-top:auto; text-align:center; font-size:13px; color:var(--gris); line-height:1.6; }
+  footer a { color:var(--bleu); font-weight:600; text-decoration:none; }
+  .sig { margin-top:6px; font-size:11.5px; font-style:italic; color:#7a8199; }
+  .sig b { color:var(--bleu); font-style:normal; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="/logo.png" alt="">
+    <div class="titre"><b>Paramètres</b><span>A.C.I.S Marine — Météo marine Tunisie</span></div>
+    <button id="retour" onclick="versCarte()">🗺 Carte</button>
+  </header>
+
+  <section class="carte">
+    <h3>Abonnement</h3>
+    <div id="nom">…</div>
+    <div id="abo"></div>
+    <button id="changer" onclick="montrerActivation()">Activer / renouveler avec un code</button>
+  </section>
+
+  <section class="carte" id="activation" style="display:none">
+    <h3>Activation</h3>
+    <form id="act" onsubmit="return activer(event)">
+      <label style="font-size:12.5px;color:var(--gris)">Nom du client
+        <input id="anom" autocomplete="off" autocapitalize="characters"></label>
+      <div class="ligne" style="margin-top:10px">
+        <label style="flex:1;font-size:12.5px;color:var(--gris)">Code d'activation (10 caractères)
+          <input id="code" maxlength="14" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+        <button type="button" class="voir" onclick="collerCode()">📋 Coller</button>
+        <button type="button" class="voir" onclick="code.classList.toggle('voir')">Voir</button>
+      </div>
+      <button type="submit">Activer</button>
+      <div id="actmsg"></div>
+    </form>
+    <div id="appareil"></div>
+  </section>
+
+  <section class="carte">
+    <h3>Prévisions</h3>
+    <p class="note">À chaque ouverture, l'application vérifie s'il y a de nouvelles prévisions NOAA et les télécharge toute seule.</p>
+    <div class="choix">
+      <label>Durée
+        <select id="jours">
+          <option value="3">3 jours</option><option value="5">5 jours</option>
+          <option value="7">7 jours</option><option value="10">10 jours</option>
+          <option value="16">16 jours (maximum)</option>
+        </select>
+      </label>
+      <label>Pas de temps
+        <div class="seg" id="pas"><button data-v="1">1 h</button><button data-v="3">3 h</button></div>
+      </label>
+    </div>
+    <button id="go">⟳ TÉLÉCHARGER MAINTENANT<small>Vent + rafales + vagues · NOAA GFS</small></button>
+    <div class="barre" id="barre"><i></i></div>
+    <div id="msg"></div>
+  </section>
+
+  <footer>
+    <div>Sfax : <a href="tel:+21622633254">22 633 254</a> &nbsp;|&nbsp; Kélibia : <a href="tel:+21694596447">94 596 447</a></div>
+    <div class="sig">✦ créé par <b>Claude</b> @ <b>A.C.I.S</b> — version 1.2026 ✦</div>
+    <div class="sig" style="margin-top:2px">© 2026 A.C.I.S Marine — Tous droits réservés</div>
+  </footer>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const Q = location.search;
+let pas = 3, suivi = null, E = null;
+const fr = d => d ? d.slice(8,10) + "/" + d.slice(5,7) + "/" + d.slice(0,4) : "";
+// revenir à la carte sans empiler l'historique (le bouton Retour d'Android reste logique)
+function versCarte() {
+  let depuisCarte = false;
+  try { depuisCarte = new URL(document.referrer).pathname === "/"; } catch (x) {}
+  if (depuisCarte && history.length > 1) history.back(); else location.replace("/");
+}
+const post = async (u, d) => (await fetch(u, { method: "POST", body: JSON.stringify(d || {}) })).json();
+
+function choisirPas(v) { pas = v; document.querySelectorAll("#pas button").forEach(x => x.classList.toggle("on", +x.dataset.v === v)); }
+document.querySelectorAll("#pas button").forEach(b => b.onclick = () => { choisirPas(+b.dataset.v); sauver(); });
+$("jours").onchange = sauver;
+function sauver() { post("/api/reglages", { jours: +$("jours").value, pas }); }
+function montrerActivation() { $("activation").style.display = ""; $("anom").focus(); $("activation").scrollIntoView({ behavior: "smooth" }); }
+
+async function etat() {
+  E = await (await fetch("/api/etat")).json();
+  const L = E.licence;
+  $("nom").textContent = L.ok ? L.nom : "Abonnement non activé";
+  $("abo").innerHTML = L.ok
+    ? `<span class="ok">✔ Valable jusqu'au ${fr(L.fin)}</span>` + (L.jours != null ? ` · ${L.jours} jours restants` : "")
+    : `<span class="ko">✖ ${L.erreur}</span>`;
+  $("changer").style.display = L.ok ? "" : "none";
+  if (!L.ok || location.hash.includes("activation")) $("activation").style.display = "";
+  $("go").disabled = !L.ok || E.progression.en_cours;
+  $("retour").style.display = E.fichier && L.ok ? "" : "none";      // abonnement fini : plus d'accès à la carte
+  $("appareil").textContent = "Appareil : " + E.appareil;
+  $("jours").value = E.reglages.jours; choisirPas(E.reglages.pas);
+  if (E.fichier && !E.progression.en_cours)
+    $("msg").textContent = "Prévisions du " + E.fichier.replace(/^Tunisie_\w+?_(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d).*/, "$3/$2/$1 à $4h$5 UTC");
+  return E;
+}
+
+function afficher(p) {
+  $("barre").style.display = "block";
+  $("barre").firstChild.style.width = (p.n ? Math.round(100 * p.i / p.n) : 3) + "%";
+  $("msg").textContent = (p.etape || "Préparation…") + (p.n ? `  ${p.i}/${p.n}` : "") +
+    (p.message && /pause|essai|attente|erreur|indispon/i.test(p.message) ? " — " + p.message : "");
+}
+
+function suivre() {
+  clearInterval(suivi);
+  $("go").disabled = true;
+  suivi = setInterval(async () => {
+    const e = await (await fetch("/api/etat")).json(), p = e.progression;
+    afficher(p);
+    if (p.en_cours) return;
+    clearInterval(suivi);
+    $("go").disabled = false;
+    if (p.erreur) { $("msg").innerHTML = `<span class="ko">✖ ${p.erreur}</span>`; $("barre").style.display = "none"; }
+    else if (p.fini) { $("barre").firstChild.style.width = "100%"; $("msg").innerHTML = '<span class="ok">✔ Terminé</span>'; setTimeout(versCarte, 600); }
+  }, 700);
+}
+
+$("go").onclick = async () => {
+  const r = await post("/api/telecharger", { jours: +$("jours").value, pas });
+  if (!r.ok && !/en cours/.test(r.erreur)) { $("msg").innerHTML = `<span class="ko">✖ ${r.erreur}</span>`; return; }
+  afficher({ i: 0, n: 0, etape: "Recherche des nouvelles prévisions" });
+  suivre();
+};
+
+async function collerCode() {
+  let t = "", err = "";
+  try { const r = await post("/api/coller"); if (r.ok) t = r.texte || ""; else err = r.erreur || ""; } catch (e) { err = String(e); }
+  if (!t && navigator.clipboard && navigator.clipboard.readText) { try { t = await navigator.clipboard.readText(); } catch (e) {} }
+  t = (t || "").toUpperCase().replace(/[^0-9A-Z-]/g, "").slice(0, 14);
+  if (t) { $("code").value = t; $("actmsg").textContent = ""; $("actmsg").className = ""; return; }
+  $("actmsg").className = "ko";
+  $("actmsg").textContent = "✖ Presse-papiers vide" + (err ? " (" + err + ")" : "") +
+    " : copiez d'abord le code dans le générateur, sur CE téléphone. Sinon tapez-le.";
+}
+
+async function activer(ev) {
+  ev.preventDefault();
+  $("actmsg").textContent = "Vérification…"; $("actmsg").className = "";
+  const r = await post("/api/activer", { nom: $("anom").value, code: $("code").value });
+  if (r.ok) {
+    $("code").value = ""; $("activation").style.display = "none"; history.replaceState(null, "", "/parametres");
+    await etat(); $("actmsg").textContent = "";
+    afficher({ i: 0, n: 0, etape: "Recherche des nouvelles prévisions" }); suivre();   // 1res prévisions automatiques
+  } else { $("actmsg").textContent = "✖ " + r.erreur; $("actmsg").className = "ko"; }
+  return false;
+}
+
+etat().then(async e => {
+  if (e.progression.en_cours) suivre();
+  else if (Q.includes("maj=1") && e.licence.ok) $("go").click();
+  else if (Q.includes("premiere=1") && e.licence.ok) { const r = await post("/api/maj"); if (r.lance) suivre(); else $("go").click(); }
+});
+</script>
+</body>
+</html>
