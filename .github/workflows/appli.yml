@@ -19,16 +19,23 @@ jobs:
   publier:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      MAJ_CLE: ${{ secrets.MAJ_CLE }}
     steps:
+      - name: Cle absente (CLE_MISES_A_JOUR.bat pas encore fait) -> rien a publier
+        if: ${{ env.MAJ_CLE == '' }}
+        run: echo "Secret MAJ_CLE pas encore enregistre sur GitHub, publication sautee."
       - uses: actions/checkout@v4
+        if: ${{ env.MAJ_CLE != '' }}
       - uses: actions/setup-python@v5
+        if: ${{ env.MAJ_CLE != '' }}
         with:
           python-version: "3.12"
       - name: Fabriquer et signer maj.zip
-        env:
-          MAJ_CLE: ${{ secrets.MAJ_CLE }}
+        if: ${{ env.MAJ_CLE != '' }}
         run: python publier_appli.py .
       - name: Publier (maj.json en dernier)
+        if: ${{ env.MAJ_CLE != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
