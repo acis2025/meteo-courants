@@ -26,7 +26,7 @@ def _bits(valeurs, nbits: int) -> bytes:
 
 def message(discipline: int, categorie: int, numero: int, date_ref: dt.datetime, minutes: int,
             lat1: float, lon1: float, dlat: float, dlon: float, ni: int, nj: int, valeurs: list,
-            decimales: int = 2, centre: int = 85) -> bytes:
+            decimales: int = 2, centre: int = 85, niveau: int = 1) -> bytes:
     """valeurs : liste ni*nj, du sud au nord, d'ouest en est ; None = terre."""
     s1 = struct.pack(">HHBBBHBBBBBBB", centre, 0, 2, 1, 1, date_ref.year, date_ref.month, date_ref.day,
                      date_ref.hour, date_ref.minute, 0, 0, 1)
@@ -39,7 +39,8 @@ def message(discipline: int, categorie: int, numero: int, date_ref: dt.datetime,
           + struct.pack(">II", round(dlon * 1e6), round(dlat * 1e6)) + bytes([0x40]))  # balayage sud -> nord
     s4 = (struct.pack(">HH", 0, 0) + bytes([categorie, numero, 2, 0, 0]) + struct.pack(">HB", 0, 0)
           + bytes([0]) + struct.pack(">i", minutes)                                 # unité : minute
-          + bytes([1, 0]) + struct.pack(">I", 0) + bytes([255, 0]) + struct.pack(">I", 0))  # niveau : surface
+          + bytes([niveau, 0]) + struct.pack(">I", 0) + bytes([255, 0]) + struct.pack(">I", 0))
+    # niveau (table 4.5) : 1 = surface (défaut) ; 10 = atmosphère entière (nuages, comme GFS : XyGrib l'attend)
     presents = [v for v in valeurs if v is not None]
     f = 10 ** decimales
     entiers = [round(v * f) for v in presents]

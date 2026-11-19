@@ -83,7 +83,8 @@ def ecrire_ciel(brut: str, dossier: str, ref: dt.datetime) -> None:
             if h in nuages:
                 t = nuages[h][1]
                 sortie += message(0, 6, 1, ref, minutes, t.lat1, t.lon1, t.dlat, t.dlon, t.ni, t.nj,
-                                  [None if v is None else max(0.0, min(100.0, v)) for v in t.valeurs], decimales=0)
+                                  [None if v is None else max(0.0, min(100.0, v)) for v in t.valeurs], decimales=0,
+                                  niveau=10)                                   # atmosphère entière
         open(os.path.join(dossier, nom + ".part"), "wb").write(bytes(sortie))
         os.replace(os.path.join(dossier, nom + ".part"), os.path.join(dossier, nom))
         print(nom, round(len(sortie) / 1e6, 2), "Mo")
