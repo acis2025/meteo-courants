@@ -253,6 +253,7 @@ class Appli:
             "aisUrl": "/api/ais",
             "suivi": {"etat": "/api/etat", "maj": "/api/maj", "fichier": os.path.basename(f)},
         }
+        options["version"] = self.version()
         if maintenant:
             options["maintenant"] = maintenant.isoformat()
         if not lic["ok"]:
@@ -304,11 +305,24 @@ class Appli:
             navires.append(n)
         return {"ok": True, "navires": navires, "age_photo": max(0, int((maintenant - d.get("maj", maintenant)) / 60))}
 
+    def version(self) -> str:
+        """« v1.2026 · 19/11 22:20 » (code qui tourne, mise à jour en ligne comprise) + version de l'APK."""
+        try:
+            v = self.mm.version_texte()
+        except Exception:                          # noqa: BLE001
+            v = "v1.2026"
+        try:
+            import importlib.metadata as md
+            v += " · appli " + md.version("meteomarinetn")
+        except Exception:                          # noqa: BLE001
+            pass
+        return v
+
     def etat(self) -> dict:
         f = self.dernier_fichier()
         return {"licence": self.info_licence(), "appareil": self.identifiant_appareil(),
                 "fichier": os.path.basename(f) if f else None, "progression": self.prog,
-                "reglages": self.reglages()}
+                "reglages": self.reglages(), "version": self.version()}
 
 
 # ---------------------------------------------------------------- HTTP

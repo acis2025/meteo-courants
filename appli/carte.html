@@ -976,7 +976,8 @@ function majPastille() {
   }
   const run = `run ${String(RUN.getUTCDate()).padStart(2, "0")}/${String(RUN.getUTCMonth() + 1).padStart(2, "0")} ${String(RUN.getUTCHours()).padStart(2, "0")}h UTC`;
   document.getElementById("modele").innerHTML = `Mer : ${MODELES[couche]}${couche !== "courant" && couche !== "maree" ? " · " + run : ""}` +
-    (pluieOn ? `<br>Terre : pluie et nuages NOAA GFS · ${run}` : "");
+    (pluieOn ? `<br>Terre : pluie et nuages NOAA GFS · ${run}` : "") +
+    (CONFIG.version ? `<br>Météo Marine ${CONFIG.version}` : "");
 }
 function choisir(c) {
   if (!COUCHE_IC[c]) return;

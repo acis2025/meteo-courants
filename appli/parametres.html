@@ -113,7 +113,7 @@
 
   <footer>
     <div>Sfax : <a href="tel:+21622633254">22 633 254</a> &nbsp;|&nbsp; Kélibia : <a href="tel:+21694596447">94 596 447</a></div>
-    <div class="sig">✦ créé par <b>Claude</b> @ <b>A.C.I.S</b> — version 1.2026 ✦</div>
+    <div class="sig">✦ créé par <b>Claude</b> @ <b>A.C.I.S</b> — version <span id="ver">1.2026</span> ✦</div>
     <div class="sig" style="margin-top:2px">© 2026 A.C.I.S Marine — Tous droits réservés</div>
   </footer>
 </main>
@@ -138,6 +138,7 @@ function montrerActivation() { $("activation").style.display = ""; $("anom").foc
 
 async function etat() {
   E = await (await fetch("/api/etat")).json();
+  if (E.version) $("ver").textContent = E.version;
   const L = E.licence;
   $("nom").textContent = L.ok ? L.nom : "Abonnement non activé";
   $("abo").innerHTML = L.ok
