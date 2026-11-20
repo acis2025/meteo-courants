@@ -976,7 +976,7 @@ function rafraichir() {
 // pluie affichée mais aucune pluie prévue dans la partie visible : on le dit, et on donne la prochaine
 function pluieVisible(kk, laB, laH, loG, loD, terreSeule) {
   const c = champs.PRATE; if (!c) return false;
-  const g = c.g, n = g.ni * g.nj, base = kk * n, seuil = 0.2 * c.f;   // pluie nette, pas une trace
+  const g = c.g, n = g.ni * g.nj, base = kk * n, seuil = 0.1 * c.f;   // même seuil que le dessin
   for (let j = 0; j < g.nj; j++) {
     const la = g.lat1 + j * g.dlat; if (la < laB || la > laH) continue;
     for (let i = 0; i < g.ni; i++) {
