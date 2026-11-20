@@ -33,7 +33,7 @@
   #menuCouches { position:fixed; right:12px; top:82px; z-index:9; width:min(330px, 92vw); background:#fff; color:#1d2433;
                  border-radius:18px; box-shadow:0 8px 24px rgba(0,0,0,.45); padding:8px 12px 12px; display:none; }
   #menuCouches .titre { font-size:11.5px; font-weight:800; color:#6b7390; text-transform:uppercase; letter-spacing:.06em; margin:8px 2px 6px; }
-  #menuCouches .grille { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
+  #menuCouches .grille { display:grid; grid-template-columns:repeat(5, 1fr); gap:5px; }
   #menuCouches .grille button { border:2px solid #e4e8f2; background:#f6f8fc; border-radius:14px; padding:8px 2px 6px; font-size:12px;
                                 font-weight:700; color:#1d2433; }
   #menuCouches .grille button .ic { display:block; font-size:23px; }
@@ -138,7 +138,9 @@
     <button id="bVagues"><span class="ic">🌊</span>Vagues</button>
     <button id="bCourant"><span class="ic">🧭</span>Courant</button>
     <button id="bMaree"><span class="ic">🌙</span>Marée</button>
+    <button id="bVide"><span class="ic">🗺️</span>Vide</button>
   </div>
+  <button class="bascule on" id="bChiffres"><span class="ic">🔢</span><span>Valeurs sur les flèches<span class="sous">vitesse du vent (nds), hauteur des vagues (m), courant (nds)</span></span><span class="etat">Oui</span></button>
   <div class="titre" id="titreTerre">Pluie et nuages</div>
   <button class="bascule" id="bPluie"><span class="ic">🌧</span><span>Pluie<span class="sous">Terre seulement, ou Partout (aussi sur la mer)</span></span><span class="etat">Non</span></button>
   <button class="bascule" id="bNuages"><span class="ic">☁️</span><span>Nuages<span class="sous">Terre seulement, ou Partout (aussi sur la mer)</span></span><span class="etat">Non</span></button>
@@ -477,9 +479,9 @@ const COUCHES = {
   maree: { ech: ECH_MAREE, reg: true, pos: surEchelle(ECH_MAREE), table: tableReg(ECH_MAREE), unite: "m",
            grad: ["-1", "-0.5", "-0.2", "0", "+0.2", "+0.5", "+1"] }
 };
-const MODELES = { vent: "vent NOAA GFS 25 km", vagues: "vagues NOAA GFS-Wave", courant: "courant Copernicus Marine",
+const MODELES = { vide: "aucune couche (carte vide)", vent: "vent NOAA GFS 25 km", vagues: "vagues NOAA GFS-Wave", courant: "courant Copernicus Marine",
                   maree: "hauteur d'eau Copernicus Marine (marée + effet du vent)" };
-const COUCHE_IC = { vent: ["💨", "Vent"], vagues: ["🌊", "Vagues"], courant: ["🧭", "Courant"], maree: ["🌙", "Marée"] };
+const COUCHE_IC = { vent: ["💨", "Vent"], vagues: ["🌊", "Vagues"], courant: ["🧭", "Courant"], maree: ["🌙", "Marée"], vide: ["🗺️", "Vide"] };
 function courant(k, la, lo) {         // {kt, vers} ou null
   const u = interpMer("UOGRD", k, la, lo), w = interpMer("VOGRD", k, la, lo);
   if (u === null || w === null) return null;
@@ -489,6 +491,7 @@ function courant(k, la, lo) {         // {kt, vers} ou null
 // ---------------------------------------------------------------- vue (zoom / déplacement)
 const cv = document.getElementById("carte"), ctx = cv.getContext("2d");
 let W = 0, H = 0, dpr = 1, couche = "vent", k = 0, pluieOn = 0, nuagesOn = 0;   // 0 non, 1 terre, 2 partout
+let chiffresOn = true;                     // valeurs écrites à côté des barbules / flèches
 const VUE0 = { latMin: 32.6, latMax: 38.6, lonMin: 7.6, lonMax: 13.9 };
 const COS = Math.cos(35.6 * Math.PI / 180);
 let vue = { lat: 35.6, lon: 10.8, z: 1.25 };   // centre + zoom
@@ -691,7 +694,7 @@ function matriceGeo() {                    // (lon, -lat) -> pixels de l'écran
 }
 function dessiner() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "#1a2046"; ctx.fillRect(0, 0, W, H);            // hors zone de prévision
+  ctx.fillStyle = couche === "vide" ? "#2b4a73" : "#1a2046"; ctx.fillRect(0, 0, W, H);   // mer « vide » / hors zone
   const e = imageCouche(couche, k);
   if (e) {
     const [xa, ya] = xy(e.z.latMax + e.sy / 2, e.z.lonMin - e.sx / 2), [xb, yb] = xy(e.z.latMin - e.sy / 2, e.z.lonMax + e.sx / 2);
@@ -734,26 +737,39 @@ function dessiner() {
   const pasDeg = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2].find(v => v * ppd() >= 44) || 2;
   const pasLa = pasDeg * COS;
   const [laH, loG] = geo(-20, -20), [laB, loD] = geo(W + 20, H + 20);
-  for (let la = Math.ceil(laB / pasLa) * pasLa; la <= laH; la += pasLa) {
+  const etiquette = (x, y, txt) => {
+    ctx.font = "700 11px Segoe UI, Roboto, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(10,14,40,.85)"; ctx.strokeText(txt, x, y);
+    ctx.fillStyle = "#fff"; ctx.fillText(txt, x, y);
+  };
+  if (couche !== "vide") for (let la = Math.ceil(laB / pasLa) * pasLa; la <= laH; la += pasLa) {
     for (let lo = Math.ceil(loG / pasDeg) * pasDeg; lo <= loD; lo += pasDeg) {
       const [x, y] = xy(la, lo);
       if (x < 16 || x > W - 12 || y < 12 || y > H - 8 || !libre(x, y)) continue;
       if (couche === "vent" || couche === "pluie") {
         const u = interp("UGRD", k, la, lo), w = interp("VGRD", k, la, lo);
         if (u === null || w === null) continue;
-        barbule(x, y, (Math.atan2(-u, -w) * 180 / Math.PI + 360) % 360, Math.hypot(u, w) * KT);
+        const de = (Math.atan2(-u, -w) * 180 / Math.PI + 360) % 360, kt = Math.hypot(u, w) * KT;
+        barbule(x, y, de, kt);
+        if (chiffresOn) {                       // côté opposé à la hampe
+          const a = de * Math.PI / 180;
+          etiquette(x - Math.sin(a) * 11, y + Math.cos(a) * 11, String(Math.round(kt)));
+        }
       } else if (couche === "courant" || couche === "maree") {
         if (!estMer(la, lo) || !champs.UOGRD) continue;
         const c = courant(k, la, lo); if (!c || c.kt < 0.05) continue;
         fleche(x, y, c.vers, 12 + Math.min(c.kt, 2.5) * 9);
+        if (chiffresOn) { const a = c.vers * Math.PI / 180; etiquette(x + Math.cos(a) * 15, y + Math.sin(a) * 15, c.kt.toFixed(1)); }
       } else {
         if (!estMer(la, lo)) continue;
         const d = directionInterp("DIRPW", k, la, lo), h = interpMer("HTSGW", k, la, lo);
         if (d === null || h === null) continue;
         fleche(x, y, (d + 180) % 360, 14 + Math.min(h, 4) * 4);
+        if (chiffresOn) { const a = d * Math.PI / 180; etiquette(x + Math.cos(a) * 15, y + Math.sin(a) * 15, h.toFixed(1)); }
       }
     }
   }
+  ctx.font = "700 14px Segoe UI, Roboto, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
   for (const [nom, x, y] of places) {
     ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fillStyle = "#fff"; ctx.fill();
     ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.stroke();
@@ -931,7 +947,8 @@ function ficheMaree(la, lo, tNow, debutJour) {
 
 // ---------------------------------------------------------------- légende
 function legende() {
-  const C = COUCHES[couche];
+  document.getElementById("legende").style.display = couche === "vide" ? "none" : "flex";
+  const C = COUCHES[couche === "vide" ? "vent" : couche];
   document.getElementById("legGrad").style.background = "linear-gradient(90deg," +
     C.ech.map(([v, c], i) => `${c} ${C.reg ? i / (C.ech.length - 1) * 100 : v / C.max * 100}%`).join(",") + ")";
   document.getElementById("legNums").innerHTML = C.grad.map(v => `<span>${v}</span>`).join("");
@@ -999,14 +1016,14 @@ function majPastille() {
   const ou = v => v === 2 ? "terre et mer" : "terre";
   const meteo = [pluieOn ? `pluie (${ou(pluieOn)})` : "", nuagesOn ? `nuages (${ou(nuagesOn)})` : ""].filter(Boolean).join(", ");
   const run = `run ${String(RUN.getUTCDate()).padStart(2, "0")}/${String(RUN.getUTCMonth() + 1).padStart(2, "0")} ${String(RUN.getUTCHours()).padStart(2, "0")}h UTC`;
-  document.getElementById("modele").innerHTML = `Mer : ${MODELES[couche]}${couche !== "courant" && couche !== "maree" ? " · " + run : ""}` +
+  document.getElementById("modele").innerHTML = `Mer : ${MODELES[couche]}${couche === "vent" || couche === "vagues" ? " · " + run : ""}` +
     (meteo ? `<br>${meteo[0].toUpperCase() + meteo.slice(1)} : NOAA GFS · ${run}` : "") +
     (CONFIG.version ? `<br>Météo Marine ${CONFIG.version}` : "");
 }
 function choisir(c) {
   if (!COUCHE_IC[c]) return;
   couche = c;
-  for (const [id, x] of [["bVent", "vent"], ["bVagues", "vagues"], ["bCourant", "courant"], ["bMaree", "maree"]])
+  for (const [id, x] of [["bVent", "vent"], ["bVagues", "vagues"], ["bCourant", "courant"], ["bMaree", "maree"], ["bVide", "vide"]])
     document.getElementById(id).classList.toggle("actif", c === x);
   majPastille(); legende(); rafraichir();
 }
@@ -1014,6 +1031,11 @@ document.getElementById("bVent").onclick = () => { choisir("vent"); fermerMenu()
 document.getElementById("bVagues").onclick = () => { choisir("vagues"); fermerMenu(); };
 document.getElementById("bCourant").onclick = () => { choisir("courant"); fermerMenu(); };
 document.getElementById("bMaree").onclick = () => { choisir("maree"); fermerMenu(); };
+document.getElementById("bVide").onclick = () => { choisir("vide"); };   // menu laissé ouvert : on choisit ensuite pluie, nuages…
+document.getElementById("bChiffres").onclick = e => {
+  chiffresOn = !chiffresOn; const b = e.currentTarget;
+  b.classList.toggle("on", chiffresOn); b.querySelector(".etat").textContent = chiffresOn ? "Oui" : "Non"; rafraichir();
+};
 document.getElementById("bPluie").onclick = () => { pluieOn = (pluieOn + 1) % 3; majPastille(); legende(); rafraichir(); };    // Non -> Terre -> Partout
 document.getElementById("bNuages").onclick = () => { nuagesOn = (nuagesOn + 1) % 3; majPastille(); legende(); rafraichir(); };
 document.getElementById("bCouches").onclick = () => {
@@ -1160,7 +1182,7 @@ if (CONFIG.maintenant) {
 }
 // après le rechargement automatique (nouvelles prévisions) : même endroit, même heure, même couche
 function garderEtat() {
-  try { sessionStorage.setItem("mmtn_etat", JSON.stringify({ vue, t: RUN.getTime() + PAS[k] * 3600e3, couche, pluieOn, nuagesOn,
+  try { sessionStorage.setItem("mmtn_etat", JSON.stringify({ vue, t: RUN.getTime() + PAS[k] * 3600e3, couche, pluieOn, nuagesOn, chiffresOn,
                                                               lecture: !!lecture, quand: Date.now() })); } catch (x) {}
 }
 let etatRepris = null;
@@ -1177,6 +1199,7 @@ demarrer();
 if (etatRepris) {
   if (champs.PRATE && etatRepris.pluieOn) pluieOn = etatRepris.pluieOn === 2 ? 2 : 1;
   if (champs.TCDC && etatRepris.nuagesOn) nuagesOn = etatRepris.nuagesOn === 2 ? 2 : 1;
+  if (etatRepris.chiffresOn === false) document.getElementById("bChiffres").click();
   if (etatRepris.couche && COUCHE_IC[etatRepris.couche]) choisir(etatRepris.couche);
   if (etatRepris.lecture) document.getElementById("lecture").click();
 }
