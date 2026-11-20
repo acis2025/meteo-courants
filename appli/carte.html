@@ -43,6 +43,11 @@
   #menuCouches .bascule .ic { font-size:23px; }
   #menuCouches .bascule .sous { display:block; font-size:11px; font-weight:600; color:#6b7390; }
   #menuCouches .bascule .etat { margin-left:auto; font-size:12px; padding:3px 10px; border-radius:10px; background:#dfe3ee; color:#5a6280; }
+  #note { position:fixed; left:50%; top:76px; transform:translateX(-50%); z-index:4; display:none; max-width:78vw; text-align:center;
+          background:var(--verre); color:#fff; border:none; border-radius:14px; padding:6px 12px; font:600 13px/1.3 Segoe UI, Roboto, sans-serif; }
+  #note b { color:#9fd0ff; }
+  #menuCouches .bascule.absent { opacity:.6; border-style:dashed; }
+  #menuCouches .bascule.absent .etat { background:#f3d9b0; color:#7a4a00; }
   #menuCouches .bascule.on, #menuCouches .bascule.ais-on { border-color:#2fb35a; background:#eaf8ef; }
   #menuCouches .bascule.on .etat, #menuCouches .bascule.ais-on .etat { background:#2fb35a; color:#fff; }
   #menuCouches .source { font-size:11px; color:#6b7390; margin-top:8px; line-height:1.35; }
@@ -149,6 +154,7 @@
   <div class="source" id="modele"></div>
 </div>
 <div id="bandeau"></div>
+<button id="note"></button>
 <div id="choixZone"></div>
 <div id="fiche"></div>
 <div id="navire"></div>
@@ -965,8 +971,40 @@ function legende() {
 // ---------------------------------------------------------------- rafraîchissement
 let attente = false, minutFin = null;
 function rafraichir() {
-  if (!attente) { attente = true; requestAnimationFrame(() => { attente = false; dessiner(); majTemps(); majFiche(); prepSuivantes(); }); }
+  if (!attente) { attente = true; requestAnimationFrame(() => { attente = false; dessiner(); majTemps(); majFiche(); majNote(); prepSuivantes(); }); }
 }
+// pluie affichée mais aucune pluie prévue dans la partie visible : on le dit, et on donne la prochaine
+function pluieVisible(kk, laB, laH, loG, loD, terreSeule) {
+  const c = champs.PRATE; if (!c) return false;
+  const g = c.g, n = g.ni * g.nj, base = kk * n, seuil = 0.2 * c.f;   // pluie nette, pas une trace
+  for (let j = 0; j < g.nj; j++) {
+    const la = g.lat1 + j * g.dlat; if (la < laB || la > laH) continue;
+    for (let i = 0; i < g.ni; i++) {
+      const lo = g.lon1 + i * g.dlon; if (lo < loG || lo > loD) continue;
+      const v = c.d[base + j * g.ni + i];
+      if (v !== ABSENT && v >= seuil && (!terreSeule || !estMer(la, lo))) return true;
+    }
+  }
+  return false;
+}
+let noteK = null;
+function majNote() {
+  const el = document.getElementById("note");
+  if (!pluieOn || !champs.PRATE) { el.style.display = "none"; return; }
+  const bas = document.getElementById("bas").offsetHeight + 40;              // partie vraiment visible (sans les barres)
+  const [laH, loG] = geo(12, 80), [laB, loD] = geo(W - 12, H - bas), terre = pluieOn === 1;
+  if (pluieVisible(k, laB, laH, loG, loD, terre)) { el.style.display = "none"; return; }
+  noteK = null;
+  for (let kk = k + 1; kk < PAS.length; kk++) if (pluieVisible(kk, laB, laH, loG, loD, terre)) { noteK = kk; break; }
+  let txt = `🌧 Pas de pluie prévue ${terre ? "sur la terre " : ""}ici à cette heure`;
+  if (noteK !== null) { const d = tunis(PAS[noteK]); txt += `<br>Prochaine : <b>${JC[d.getUTCDay()]} ${d.getUTCDate()} · ${hh(d)}</b> (toucher pour y aller)`; }
+  else txt += "<br>Aucune dans les prévisions";
+  el.innerHTML = txt; el.style.display = "block";
+}
+document.getElementById("note").onclick = () => {
+  if (noteK === null) return;
+  aller(noteK);
+};
 // prépare à l'avance les 2 heures suivantes quand le téléphone ne fait rien (animation fluide)
 let tPrep = null;
 function prepSuivantes() {
@@ -1013,6 +1051,10 @@ function majPastille() {
     const b = document.getElementById(id); b.classList.toggle("on", !!on);
     b.querySelector(".etat").textContent = id === "bAis" ? (on ? "Oui" : "Non") : ["Non", "Terre", "Partout"][on];
   }
+  for (const [id, code] of [["bPluie", "PRATE"], ["bNuages", "TCDC"]]) if (!champs[code]) {   // absent du fichier
+    const b = document.getElementById(id); b.classList.add("absent"); b.querySelector(".etat").textContent = "Absent";
+    b.querySelector(".sous").textContent = "Pas dans les prévisions téléchargées : refaites « Télécharger »";
+  }
   const ou = v => v === 2 ? "terre et mer" : "terre";
   const meteo = [pluieOn ? `pluie (${ou(pluieOn)})` : "", nuagesOn ? `nuages (${ou(nuagesOn)})` : ""].filter(Boolean).join(", ");
   const run = `run ${String(RUN.getUTCDate()).padStart(2, "0")}/${String(RUN.getUTCMonth() + 1).padStart(2, "0")} ${String(RUN.getUTCHours()).padStart(2, "0")}h UTC`;
@@ -1036,8 +1078,8 @@ document.getElementById("bChiffres").onclick = e => {
   chiffresOn = !chiffresOn; const b = e.currentTarget;
   b.classList.toggle("on", chiffresOn); b.querySelector(".etat").textContent = chiffresOn ? "Oui" : "Non"; rafraichir();
 };
-document.getElementById("bPluie").onclick = () => { pluieOn = (pluieOn + 1) % 3; majPastille(); legende(); rafraichir(); };    // Non -> Terre -> Partout
-document.getElementById("bNuages").onclick = () => { nuagesOn = (nuagesOn + 1) % 3; majPastille(); legende(); rafraichir(); };
+document.getElementById("bPluie").onclick = () => { if (!champs.PRATE) return; pluieOn = (pluieOn + 1) % 3; majPastille(); legende(); rafraichir(); };    // Non -> Terre -> Partout
+document.getElementById("bNuages").onclick = () => { if (!champs.TCDC) return; nuagesOn = (nuagesOn + 1) % 3; majPastille(); legende(); rafraichir(); };
 document.getElementById("bCouches").onclick = () => {
   menuC.style.display = menuC.style.display === "block" ? "none" : "block";
   document.getElementById("choixZone").style.display = "none";
@@ -1086,9 +1128,6 @@ document.getElementById("bAis").onclick = e => {
 };
 if (!champs.HTSGW) document.getElementById("bVagues").style.display = "none";
 if (!champs.UOGRD) document.getElementById("bCourant").style.display = "none";
-if (!champs.PRATE) document.getElementById("bPluie").style.display = "none";
-if (!champs.TCDC) document.getElementById("bNuages").style.display = "none";
-if (!champs.PRATE && !champs.TCDC) document.getElementById("titreTerre").style.display = "none";
 if (!MAREE) document.getElementById("bMaree").style.display = "none";
 
 // zones

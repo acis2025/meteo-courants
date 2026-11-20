@@ -428,18 +428,7 @@ def fichier_robot(tel: "Telechargeur", dossier: str, jours: int, pas: int, coura
     garde = bytearray(b"".join(m for m in _messages(b) if _echeance_message(m) <= max_h))
     heures = heures_fichier(bytes(garde))             # les heures du vent et des vagues
     tel.log(f"  run du {ref:%d/%m %H}h UTC, {len(garde) / 1e6:.1f} Mo")
-    # pluie + nuages du MÊME run (sinon les heures ne correspondraient pas) ; facultatif
-    try:
-        rc = tel.s.get(URL_CIEL.format(pas=1 if int(pas) == 1 else 3) + "?t=" + str(int(time.time() // 60)), 120)
-        bc = rc.content
-        if rc.status_code == 200 and bc[:4] == b"GRIB" and _date_ref(bc) == ref:
-            avant = len(garde)
-            garde += garder_heures(bc, heures)
-            tel.log(f"  pluie et nuages : {(len(garde) - avant) / 1e6:.1f} Mo")
-        else:
-            tel.log("  pluie et nuages pas encore disponibles pour ce run")
-    except Exception as e:                          # noqa: BLE001
-        tel.log(f"  pluie et nuages non ajoutés : {e}")
+    garde = bytearray(ajouter_ciel(tel, bytes(garde), ref, pas, heures))   # pluie + nuages (facultatif)
     if courants:
         try:
             fc = tel.courants(nom_fichier("courants", dossier, tel.heure))
@@ -468,13 +457,67 @@ def run_robot() -> Optional[dt.datetime]:
     return None
 
 
+def _parametre(m: bytes) -> tuple:
+    """(discipline, catégorie, numéro) d'un message GRIB2, lus dans les sections 0 et 4."""
+    p = 16
+    while p < len(m) - 4:
+        lg = int.from_bytes(m[p:p + 4], "big")
+        if lg < 5:
+            break
+        if m[p + 4] == 4:
+            return m[6], m[p + 9], m[p + 10]
+        p += lg
+    return None
+
+
+PLUIE_NUAGES = {(0, 1, 7), (0, 6, 1)}             # PRATE, TCDC
+
+
+def a_pluie_nuages(b: bytes) -> bool:
+    return any(_parametre(m) in PLUIE_NUAGES for m in _messages(b))
+
+
+def ajouter_ciel(tel: "Telechargeur", garde: bytes, ref, pas: int, heures: set = None) -> bytes:
+    """Ajoute la pluie et les nuages préparés par le robot, seulement s'ils sont du MÊME run que `garde`
+    (sinon les heures ne correspondraient pas). Facultatif : en cas d'échec, `garde` est rendu tel quel."""
+    if ref is None:
+        return garde
+    try:
+        rc = tel.s.get(URL_CIEL.format(pas=1 if int(pas) == 1 else 3) + "?t=" + str(int(time.time() // 60)), 120)
+        bc = rc.content
+        if rc.status_code == 200 and bc[:4] == b"GRIB" and _date_ref(bc) == ref:
+            ajout = garder_heures(bc, heures if heures is not None else heures_fichier(garde))
+            tel.log(f"  pluie et nuages : {len(ajout) / 1e6:.1f} Mo")
+            return garde + ajout
+        tel.log("  pluie et nuages pas encore disponibles pour ce run")
+    except Exception as e:                          # noqa: BLE001
+        tel.log(f"  pluie et nuages non ajoutés : {e}")
+    return garde
+
+
 def run_du_fichier(chemin: str) -> Optional[dt.datetime]:
-    """Run (date de référence) d'un fichier GRIB2, lu dans son 1er message."""
+    """Run (date de référence) d'un fichier GRIB2, lu dans son 1er message.
+    Fichier SANS pluie ni nuages (robot pas encore prêt, ou téléchargement direct NOAA) : le run est
+    rendu un peu plus ancien UNE fois par run, pour que l'appli le retélécharge avec la pluie et les nuages."""
     try:
         with open(chemin, "rb") as f:
-            return _date_ref(f.read(64))
+            b = f.read()
+        ref = _date_ref(b[:64])
     except Exception:                               # noqa: BLE001
         return None
+    try:
+        if ref is not None and not a_pluie_nuages(b):
+            dossier = os.path.dirname(chemin) or "."
+            marque = os.path.join(dossier, f"essai_ciel_{ref:%Y%m%d%H}")
+            if not os.path.exists(marque):
+                for n in os.listdir(dossier):      # un seul repère (le run en cours)
+                    if n.startswith("essai_ciel_"):
+                        os.remove(os.path.join(dossier, n))
+                open(marque, "w").close()
+                return ref - dt.timedelta(minutes=1)
+    except Exception:                               # noqa: BLE001
+        pass
+    return ref
 
 
 def telecharger_maree(tel: "Telechargeur", dossier: str) -> Optional[str]:

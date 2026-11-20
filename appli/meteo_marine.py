@@ -237,6 +237,16 @@ def executer(c: dict, tel: gd.Telechargeur) -> list[str]:
         f = gd.fusionner(produits, gd.nom_fichier("complet", c["dossier"], tel.heure))
         for p in produits:
             os.remove(p)
+        if c.get("robot", True):                    # pluie + nuages du robot (même run), comme la voie rapide
+            try:
+                b = open(f, "rb").read()
+                b2 = gd.ajouter_ciel(tel, b, gd._date_ref(b), pas)
+                if len(b2) > len(b):
+                    with open(f + ".part", "wb") as dst:
+                        dst.write(b2)
+                    os.replace(f + ".part", f)
+            except Exception as e:                # noqa: BLE001
+                tel.log(f"Pluie et nuages non ajoutés : {e}")
         tel.log(f"Fichier unique vent + vagues{' + courants' if len(produits) > 2 else ''} : {f} ({os.path.getsize(f) / 1e6:.1f} Mo)")
         produits = [f]
     n = nettoyer_historique(c["dossier"], int(c.get("garder", 2)))
