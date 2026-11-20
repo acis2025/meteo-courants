@@ -139,8 +139,9 @@
     <button id="bCourant"><span class="ic">🧭</span>Courant</button>
     <button id="bMaree"><span class="ic">🌙</span>Marée</button>
   </div>
-  <div class="titre" id="titreTerre">Sur la terre</div>
-  <button class="bascule" id="bPluie"><span class="ic">🌧</span><span>Pluie et nuages<span class="sous">Terre : la mer reste visible · Partout : la pluie aussi sur la mer</span></span><span class="etat">Non</span></button>
+  <div class="titre" id="titreTerre">Pluie et nuages</div>
+  <button class="bascule" id="bPluie"><span class="ic">🌧</span><span>Pluie<span class="sous">Terre seulement, ou Partout (aussi sur la mer)</span></span><span class="etat">Non</span></button>
+  <button class="bascule" id="bNuages"><span class="ic">☁️</span><span>Nuages<span class="sous">Terre seulement, ou Partout (aussi sur la mer)</span></span><span class="etat">Non</span></button>
   <div class="titre">Navires</div>
   <button class="bascule" id="bAis"><span class="ic">🚢</span><span>AIS<span class="sous">positions des bateaux</span></span><span class="etat">Non</span></button>
   <div class="source" id="modele"></div>
@@ -487,7 +488,7 @@ function courant(k, la, lo) {         // {kt, vers} ou null
 
 // ---------------------------------------------------------------- vue (zoom / déplacement)
 const cv = document.getElementById("carte"), ctx = cv.getContext("2d");
-let W = 0, H = 0, dpr = 1, couche = "vent", k = 0, pluieOn = 0;   // pluie : 0 non, 1 terre, 2 partout
+let W = 0, H = 0, dpr = 1, couche = "vent", k = 0, pluieOn = 0, nuagesOn = 0;   // 0 non, 1 terre, 2 partout
 const VUE0 = { latMin: 32.6, latMax: 38.6, lonMin: 7.6, lonMax: 13.9 };
 const COS = Math.cos(35.6 * Math.PI / 180);
 let vue = { lat: 35.6, lon: 10.8, z: 1.25 };   // centre + zoom
@@ -640,35 +641,36 @@ function valeur(c, kk, la, lo) {
 function imageCouche(c, kk) {
   const cle = c + "|" + kk; let e = cacheImg.get(cle);
   if (e) return e;
-  const code = { vent: "UGRD", courant: "UOGRD", vagues: "HTSGW", pluie: champs.PRATE ? "PRATE" : "TCDC", pluiemer: "PRATE" }[c];
+  const code = { vent: "UGRD", courant: "UOGRD", vagues: "HTSGW", pluieterre: "PRATE", pluiemer: "PRATE",
+                 nuages: "TCDC", nuagesmer: "TCDC" }[c];
   if (c === "maree" ? !MAREE : !champs[code]) return null;
   const z = etendue(c === "maree" ? MAREE.g : champs[code].g);
   const w = Math.round((z.lonMax - z.lonMin) / RES_IMG) + 1, h = Math.round((z.latMax - z.latMin) / RES_IMG) + 1;
   const sx = (z.lonMax - z.lonMin) / (w - 1), sy = (z.latMax - z.latMin) / (h - 1);
   const cnv = document.createElement("canvas"); cnv.width = w; cnv.height = h;
   const g = cnv.getContext("2d"), img = g.createImageData(w, h), px = img.data;
-  const C = COUCHES[c === "pluiemer" ? "pluie" : c], T = C.table, N = T.length / 3 - 1;
+  const C = COUCHES[c.startsWith("pluie") || c.startsWith("nuages") ? "pluie" : c], T = C.table, N = T.length / 3 - 1;
   const position = C.pos || (v => v / C.max);
   for (let y = 0; y < h; y++) {
     const la = z.latMax - y * sy;
     for (let x = 0; x < w; x++) {
       const lo = z.lonMin + x * sx, o = (y * w + x) * 4;
-      if (c === "pluiemer") {              // sur la mer : seulement la pluie, un peu transparente
+      if (c === "pluiemer" || c === "pluieterre") {   // seulement la pluie (transparent ailleurs) ; un peu transparente sur la mer
         const r = cubique("PRATE", kk, la, lo);
         if (r !== null && r >= 0.1) {
           const t = Math.round(position(r) * N) * 3;
-          px[o] = T[t]; px[o + 1] = T[t + 1]; px[o + 2] = T[t + 2]; px[o + 3] = 190;
+          px[o] = T[t]; px[o + 1] = T[t + 1]; px[o + 2] = T[t + 2]; px[o + 3] = c === "pluiemer" ? 190 : 255;
         }
         continue;
       }
-      if (c === "pluie") {                 // nuages en gris (plus c'est couvert, plus c'est clair), pluie en couleur
-        const nb = champs.TCDC ? cubique("TCDC", kk, la, lo) : 0, r = champs.PRATE ? cubique("PRATE", kk, la, lo) : 0;
-        const a = Math.max(0, Math.min(1, (nb || 0) / 100)) * 0.85;
-        if (r !== null && r >= 0.1) {
-          const t = Math.round(position(r) * N) * 3;
-          px[o] = T[t]; px[o + 1] = T[t + 1]; px[o + 2] = T[t + 2];
-        } else for (let q = 0; q < 3; q++) px[o + q] = NUIT[q] + (NUAGE[q] - NUIT[q]) * a;
-        px[o + 3] = 255;
+      if (c === "nuages" || c === "nuagesmer") {     // terre : gris opaque (plus c'est couvert, plus c'est clair) ; mer : voile blanc
+        const a = Math.max(0, Math.min(1, (cubique("TCDC", kk, la, lo) || 0) / 100));
+        if (c === "nuages") {
+          for (let q = 0; q < 3; q++) px[o + q] = NUIT[q] + (NUAGE[q] - NUIT[q]) * a * 0.85;
+          px[o + 3] = 255;
+        } else if (a >= 0.1) {
+          px[o] = NUAGE[0]; px[o + 1] = NUAGE[1]; px[o + 2] = NUAGE[2]; px[o + 3] = Math.round(a * 165);
+        }
         continue;
       }
       const v = valeur(c, kk, la, lo);
@@ -696,18 +698,21 @@ function dessiner() {
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
     ctx.drawImage(e.cnv, xa, ya, xb - xa, yb - ya);
   }
-  const em = pluieOn === 2 ? imageCouche("pluiemer", k) : null;
-  if (em) {                                 // « Partout » : la pluie aussi sur la mer, par-dessus la couche marine
-    const [qa, qb] = xy(em.z.latMax + em.sy / 2, em.z.lonMin - em.sx / 2), [qc, qd] = xy(em.z.latMin - em.sy / 2, em.z.lonMax + em.sx / 2);
-    ctx.drawImage(em.cnv, qa, qb, qc - qa, qd - qb);
-  }
+  const poser = im => {                     // image géographique -> écran
+    if (!im) return;
+    const [qa, qb] = xy(im.z.latMax + im.sy / 2, im.z.lonMin - im.sx / 2), [qc, qd] = xy(im.z.latMin - im.sy / 2, im.z.lonMax + im.sx / 2);
+    ctx.drawImage(im.cnv, qa, qb, qc - qa, qd - qb);
+  };
+  if (nuagesOn === 2) poser(imageCouche("nuagesmer", k));   // « Partout » : aussi sur la mer, par-dessus la couche marine
+  if (pluieOn === 2) poser(imageCouche("pluiemer", k));
   // terres (voile léger en vent, grisées en vagues/courant), frontières, trait de côte net
   const terres = new Path2D(); terres.addPath(cheminTerres, matriceGeo());
-  const ep = pluieOn ? imageCouche("pluie", k) : null;
-  if (ep) {                                 // pluie et nuages découpés sur la terre : la mer garde sa couche marine
-    const [pa, pb] = xy(ep.z.latMax + ep.sy / 2, ep.z.lonMin - ep.sx / 2), [pc, pd] = xy(ep.z.latMin - ep.sy / 2, ep.z.lonMax + ep.sx / 2);
+  if (pluieOn || nuagesOn) {                // nuages et/ou pluie découpés sur la terre
     ctx.fillStyle = "#3b3f5c"; ctx.fill(terres);
-    ctx.save(); ctx.clip(terres); ctx.drawImage(ep.cnv, pa, pb, pc - pa, pd - pb); ctx.restore();
+    ctx.save(); ctx.clip(terres);
+    if (nuagesOn) poser(imageCouche("nuages", k));
+    if (pluieOn) poser(imageCouche("pluieterre", k));
+    ctx.restore();
   } else {
     ctx.fillStyle = couche === "vent" ? "rgba(255,255,255,.10)" : "#3b3f5c"; ctx.fill(terres);
   }
@@ -843,11 +848,12 @@ function majFiche() {
   if (h !== null) html += `<div>🌊 <b>${h.toFixed(1)} m</b>${per !== null ? ` <span class="gris">${per.toFixed(0)} s</span>` : ""}${dv !== null ? ` <span class="gris">de ${rose(dv)}</span>` : ""}</div>`;
   // pluie et nuages
   const pl = champs.PRATE ? interp("PRATE", k, la, lo) : null, nb = champs.TCDC ? interp("TCDC", k, la, lo) : null;
-  if ((!mer || pluieOn === 2) && (pl !== null || nb !== null)) {
-    const p = pl !== null && pl >= 0.05;
-    html += `<div>${p ? "🌧" : nb !== null && nb >= 60 ? "☁" : nb !== null && nb >= 20 ? "⛅" : "☀"} ` +
-            (p ? `<b>${pl < 1 ? pl.toFixed(1) : pl.toFixed(0)} mm/h</b>` : `<span class="gris">sec</span>`) +
-            (nb !== null ? ` <span class="gris">· nuages ${Math.round(nb)} %</span>` : "") + `</div>`;
+  const vp = pl !== null && (!mer || pluieOn === 2), vn = nb !== null && (!mer || nuagesOn === 2);   // en mer : selon le menu
+  if (vp || vn) {
+    const p = vp && pl >= 0.05, parts = [];
+    if (vp) parts.push(p ? `<b>${pl < 1 ? pl.toFixed(1) : pl.toFixed(0)} mm/h</b>` : `<span class="gris">sec</span>`);
+    if (vn) parts.push(`<span class="gris">nuages ${Math.round(nb)} %</span>`);
+    html += `<div>${p ? "🌧" : vn && nb >= 60 ? "☁" : vn && nb >= 20 ? "⛅" : "☀"} ` + parts.join(` <span class="gris">·</span> `) + `</div>`;
   }
   // marée : hauteur maintenant, pleines et basses mers du jour, courbe du jour
   const tNow = RUN.getTime() + PAS[k] * 3600e3, loc = new Date(tNow + 3600e3);
@@ -951,7 +957,8 @@ function prepSuivantes() {
   tPrep = setTimeout(() => {
     const att = window.requestIdleCallback || (f => setTimeout(f, 30));
     const a = IDX.find(i => i > k), b = a === undefined ? undefined : IDX.find(i => i > a);
-    [a, b].filter(i => i !== undefined).forEach(i => att(() => { imageCouche(couche, i); if (pluieOn) imageCouche("pluie", i); if (pluieOn === 2) imageCouche("pluiemer", i); }));
+    [a, b].filter(i => i !== undefined).forEach(i => att(() => { imageCouche(couche, i); if (pluieOn) imageCouche("pluieterre", i); if (pluieOn === 2) imageCouche("pluiemer", i);
+      if (nuagesOn) imageCouche("nuages", i); if (nuagesOn === 2) imageCouche("nuagesmer", i); }));
   }, 120);
 }
 function aller(n) { k = Math.max(0, Math.min(PAS.length - 1, n)); curseur.value = PAS[k]; rafraichir(); }
@@ -983,15 +990,17 @@ function majPastille() {
   const [ic, nom] = COUCHE_IC[couche];
   document.getElementById("icCouche").textContent = ic;
   document.getElementById("nomCouche").textContent = nom;
-  const plus = (pluieOn ? "🌧" : "") + (aisActif ? "🚢" : ""), e = document.getElementById("plusCouche");
+  const plus = (pluieOn ? "🌧" : "") + (nuagesOn ? "☁️" : "") + (aisActif ? "🚢" : ""), e = document.getElementById("plusCouche");
   e.textContent = plus; e.style.display = plus ? "block" : "none";
-  for (const [id, on] of [["bPluie", pluieOn], ["bAis", aisActif]]) {
+  for (const [id, on] of [["bPluie", pluieOn], ["bNuages", nuagesOn], ["bAis", aisActif]]) {
     const b = document.getElementById(id); b.classList.toggle("on", !!on);
-    b.querySelector(".etat").textContent = id === "bPluie" ? ["Non", "Terre", "Partout"][pluieOn] : on ? "Oui" : "Non";
+    b.querySelector(".etat").textContent = id === "bAis" ? (on ? "Oui" : "Non") : ["Non", "Terre", "Partout"][on];
   }
+  const ou = v => v === 2 ? "terre et mer" : "terre";
+  const meteo = [pluieOn ? `pluie (${ou(pluieOn)})` : "", nuagesOn ? `nuages (${ou(nuagesOn)})` : ""].filter(Boolean).join(", ");
   const run = `run ${String(RUN.getUTCDate()).padStart(2, "0")}/${String(RUN.getUTCMonth() + 1).padStart(2, "0")} ${String(RUN.getUTCHours()).padStart(2, "0")}h UTC`;
   document.getElementById("modele").innerHTML = `Mer : ${MODELES[couche]}${couche !== "courant" && couche !== "maree" ? " · " + run : ""}` +
-    (pluieOn === 1 ? `<br>Terre : pluie et nuages NOAA GFS · ${run}` : pluieOn === 2 ? `<br>Pluie (terre et mer) et nuages : NOAA GFS · ${run}` : "") +
+    (meteo ? `<br>${meteo[0].toUpperCase() + meteo.slice(1)} : NOAA GFS · ${run}` : "") +
     (CONFIG.version ? `<br>Météo Marine ${CONFIG.version}` : "");
 }
 function choisir(c) {
@@ -1005,9 +1014,8 @@ document.getElementById("bVent").onclick = () => { choisir("vent"); fermerMenu()
 document.getElementById("bVagues").onclick = () => { choisir("vagues"); fermerMenu(); };
 document.getElementById("bCourant").onclick = () => { choisir("courant"); fermerMenu(); };
 document.getElementById("bMaree").onclick = () => { choisir("maree"); fermerMenu(); };
-document.getElementById("bPluie").onclick = () => {      // Non -> Terre -> Partout -> Non
-  pluieOn = (pluieOn + 1) % (champs.PRATE ? 3 : 2); majPastille(); legende(); rafraichir();
-};
+document.getElementById("bPluie").onclick = () => { pluieOn = (pluieOn + 1) % 3; majPastille(); legende(); rafraichir(); };    // Non -> Terre -> Partout
+document.getElementById("bNuages").onclick = () => { nuagesOn = (nuagesOn + 1) % 3; majPastille(); legende(); rafraichir(); };
 document.getElementById("bCouches").onclick = () => {
   menuC.style.display = menuC.style.display === "block" ? "none" : "block";
   document.getElementById("choixZone").style.display = "none";
@@ -1056,7 +1064,9 @@ document.getElementById("bAis").onclick = e => {
 };
 if (!champs.HTSGW) document.getElementById("bVagues").style.display = "none";
 if (!champs.UOGRD) document.getElementById("bCourant").style.display = "none";
-if (!champs.PRATE && !champs.TCDC) { document.getElementById("bPluie").style.display = "none"; document.getElementById("titreTerre").style.display = "none"; }
+if (!champs.PRATE) document.getElementById("bPluie").style.display = "none";
+if (!champs.TCDC) document.getElementById("bNuages").style.display = "none";
+if (!champs.PRATE && !champs.TCDC) document.getElementById("titreTerre").style.display = "none";
 if (!MAREE) document.getElementById("bMaree").style.display = "none";
 
 // zones
@@ -1150,7 +1160,7 @@ if (CONFIG.maintenant) {
 }
 // après le rechargement automatique (nouvelles prévisions) : même endroit, même heure, même couche
 function garderEtat() {
-  try { sessionStorage.setItem("mmtn_etat", JSON.stringify({ vue, t: RUN.getTime() + PAS[k] * 3600e3, couche, pluieOn,
+  try { sessionStorage.setItem("mmtn_etat", JSON.stringify({ vue, t: RUN.getTime() + PAS[k] * 3600e3, couche, pluieOn, nuagesOn,
                                                               lecture: !!lecture, quand: Date.now() })); } catch (x) {}
 }
 let etatRepris = null;
@@ -1165,7 +1175,8 @@ majIdx(); curseur.value = PAS[k];
 function demarrer() { dimensionner(); construireJours(); majPastille(); legende(); rafraichir(); }
 demarrer();
 if (etatRepris) {
-  if (etatRepris.pluieOn && (champs.PRATE || champs.TCDC)) pluieOn = etatRepris.pluieOn === 2 && champs.PRATE ? 2 : 1;
+  if (champs.PRATE && etatRepris.pluieOn) pluieOn = etatRepris.pluieOn === 2 ? 2 : 1;
+  if (champs.TCDC && etatRepris.nuagesOn) nuagesOn = etatRepris.nuagesOn === 2 ? 2 : 1;
   if (etatRepris.couche && COUCHE_IC[etatRepris.couche]) choisir(etatRepris.couche);
   if (etatRepris.lecture) document.getElementById("lecture").click();
 }
