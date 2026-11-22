@@ -640,6 +640,55 @@ def marges(precision: dict) -> dict:
     return out
 
 
+# ------------------------------------------------------------------ bouton « Télécharger » (ancre + mot centré)
+ROUGE_BOUTON = "#e70013"                                  # rouge du drapeau tunisien
+
+
+class _BoutonAncre:
+    """Bouton blanc : grande ancre A.C.I.S collée au mot, l'ensemble centré dans le bouton, mot en très gras."""
+    L, H = 270, 48
+    ECART = 6                                             # espace entre l'ancre et le mot
+
+    def __init__(self, parent, image, texte: str, commande):
+        import tkinter as tk
+        self.commande = commande
+        # cadre de taille fixe ; dedans, ancre + mot côte à côte, l'ensemble centré (Tk mesure lui-même)
+        self.cadre = tk.Frame(parent, width=self.L, height=self.H, bg="#ffffff", cursor="hand2")
+        self.cadre.pack_propagate(False)
+        self.groupe = tk.Frame(self.cadre, bg="#ffffff")
+        self.groupe.place(relx=0.5, rely=0.5, anchor="center")
+        if image is not None:
+            self.lbl_img = tk.Label(self.groupe, image=image, bg="#ffffff", bd=0)
+        else:
+            self.lbl_img = tk.Label(self.groupe, text="⚓", fg=BLEU, bg="#ffffff", bd=0,
+                                    font=("Segoe UI Symbol", 22, "bold"))
+        self.lbl_img.pack(side="left", padx=(0, self.ECART))
+        self.lbl_txt = tk.Label(self.groupe, text=texte, fg=ROUGE_BOUTON, bg="#ffffff", bd=0,
+                                font=("Segoe UI Black", 17))      # plus gras que « bold »
+        self.lbl_txt.pack(side="left")
+        self.morceaux = (self.cadre, self.groupe, self.lbl_img, self.lbl_txt)
+        for m in self.morceaux:
+            m.bind("<Button-1>", lambda e: self.commande())
+            m.bind("<Enter>", lambda e: self._fond("#e3e7f5"))
+            m.bind("<Leave>", lambda e: self._fond("#ffffff"))
+
+    def _fond(self, c):
+        for m in self.morceaux:
+            m.config(bg=c)
+
+    def pack(self, **kw):
+        self.cadre.pack(**kw)
+
+    def config(self, text=None, fg=None, cursor=None, **_):
+        if text is not None:
+            self.lbl_txt.config(text=text)
+        if fg is not None:
+            self.lbl_txt.config(fg=fg)
+        if cursor is not None:
+            for m in self.morceaux:
+                m.config(cursor=cursor)
+
+
 # ------------------------------------------------------------------ fenêtre
 class Visionneuse:
     def __init__(self, chemin: str, parent=None, titre_extra: str = "", version: str = "", maintenant=None,
@@ -713,11 +762,10 @@ class Visionneuse:
         self.zone.pack(side="right", padx=6)
         self.zone.bind("<<ComboboxSelected>>", self._zone)
         self.lbl_abo = self.btn_dl = None
-        if self.hote:                              # programme : bouton Télécharger (toujours là)
-            self.btn_dl = tk.Button(haut, text="⬇ Télécharger", command=lambda: self.hote["telecharger"](),
-                                    font=("Segoe UI", 9, "bold"), bg="#f6b400", fg=BLEU, activebackground="#ffd166",
-                                    relief="flat", padx=8, cursor="hand2")
-            self.btn_dl.pack(side="right", padx=4, pady=4)
+        if self.hote:                              # programme : bouton Télécharger (toujours là), ancre A.C.I.S
+            self._ancre = self._icone_ancre("#ffffff", BLEU, 46, angle=25)    # grande ancre inclinée
+            self.btn_dl = _BoutonAncre(haut, self._ancre, "Télécharger", lambda: self.hote["telecharger"]())
+            self.btn_dl.pack(side="right", padx=(4, 8), pady=3)
 
         bas = tk.Frame(w, bg="#eef0f6")
         bas.pack(side="bottom", fill="x")
@@ -870,8 +918,9 @@ class Visionneuse:
 
     def en_cours(self, oui: bool):
         if self.btn_dl is not None:
-            self.btn_dl.config(state="disabled" if oui else "normal",
-                               text="⬇ Téléchargement…" if oui else "⬇ Télécharger")
+            # pendant le téléchargement : texte gris (un 2e clic est ignoré par le programme)
+            self.btn_dl.config(fg="#8a90a8" if oui else ROUGE_BOUTON, cursor="watch" if oui else "hand2",
+                               text="En cours…" if oui else "Télécharger")
         if not oui:
             self.progression(0, 0)
 
@@ -1282,6 +1331,186 @@ class Visionneuse:
 
     # ---------------- sigle A.C.I.S Marine en filigrane (sur la terre, entre Algérie, Tunisie et Libye)
     FILIGRANE = (34.8, 8.15)                     # lat, lon : terre, frontière tuniso-algérienne (Kasserine–Tébessa)
+
+    @staticmethod
+    def _chemin_logo():
+        """Fichier du logo A.C.I.S (ressources/logo_256.png, sinon logo_144 / logo_96), ou None."""
+        ici = os.path.dirname(os.path.abspath(__file__))
+        base = getattr(sys, "_MEIPASS", ici)
+        for d in (ici, os.path.join(ici, "ressources"), os.path.join(base, "ressources"),
+                  os.path.join(os.path.dirname(ici), "ressources")):
+            for n in ("logo_256.png", "logo_144.png", "logo_96.png"):
+                p = os.path.join(d, n)
+                if os.path.exists(p):
+                    return p
+        return None
+
+    @staticmethod
+    def _dans_ancre(x: float, y: float) -> bool:
+        """Ancre marine complète, dessinée (repère : x de -1 à 1, y de -1.2 en haut à 1.2 en bas) :
+        anneau, jas (barre du haut, bouts arrondis), verge, bras en arc, pattes et diamant."""
+        # anneau
+        d = math.hypot(x, y + 0.98)
+        if 0.11 <= d <= 0.21:
+            return True
+        # jas
+        if -0.50 <= x <= 0.50 and -0.70 <= y <= -0.58:
+            return True
+        if math.hypot(abs(x) - 0.50, y + 0.64) <= 0.085:
+            return True
+        # verge
+        if -0.075 <= x <= 0.075 and -0.80 <= y <= 0.92:
+            return True
+        # bras : arc de cercle (centre sous la croisée), partie basse seulement
+        r = math.hypot(x, y - 0.18)
+        if 0.66 <= r <= 0.79 and y >= 0.30:
+            return True
+        # pattes : triangles au bout des bras, pointes vers le haut et l'extérieur
+        ax = abs(x)
+        for (x1, y1), (x2, y2), (x3, y3) in (((0.56, 0.40), (0.94, 0.50), (0.84, 0.10)),):
+            den = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+            a = ((y2 - y3) * (ax - x3) + (x3 - x2) * (y - y3)) / den
+            b = ((y3 - y1) * (ax - x3) + (x1 - x3) * (y - y3)) / den
+            if a >= 0 and b >= 0 and a + b <= 1:
+                return True
+        # diamant (bas de la verge)
+        if abs(x) + abs(y - 0.97) <= 0.15:
+            return True
+        return False
+
+    @staticmethod
+    def _chemin_ancre():
+        """Image de l'ancre A.C.I.S (ancre.png, à côté du programme ou dans ressources/), ou None."""
+        ici = os.path.dirname(os.path.abspath(__file__))
+        base = getattr(sys, "_MEIPASS", ici)
+        for d in (ici, os.path.join(ici, "ressources"), os.path.join(base, "ressources"),
+                  os.path.join(os.path.dirname(ici), "ressources")):
+            p = os.path.join(d, "ancre.png")
+            if os.path.exists(p):
+                return p
+        return None
+
+    def _image_ancre(self):
+        """Image de l'ancre : ancre.txt (PNG encodé en base64, livré par la mise à jour en ligne comme carte.html),
+        sinon ancre.txt / ancre.png à côté du programme ou dans ressources/. None si rien."""
+        texte = None
+        try:
+            import maj_en_ligne
+            b = maj_en_ligne.ressource("ancre.txt")
+            texte = b.decode("ascii").strip() if b else None
+        except Exception:                            # noqa: BLE001
+            texte = None
+        if not texte:
+            ici = os.path.dirname(os.path.abspath(__file__))
+            base = getattr(sys, "_MEIPASS", ici)
+            for d in (ici, os.path.join(ici, "ressources"), os.path.join(base, "ressources")):
+                p = os.path.join(d, "ancre.txt")
+                if os.path.exists(p):
+                    try:
+                        texte = open(p, encoding="ascii").read().strip()
+                        break
+                    except OSError:
+                        pass
+        if texte:
+            try:
+                return self.tk.PhotoImage(data=texte)
+            except Exception:                        # noqa: BLE001
+                pass
+        p = self._chemin_ancre()
+        return self.tk.PhotoImage(file=p) if p else None
+
+    def _couverture_ancre_image(self):
+        """Ancre de ancre.png : grille 0..1 (1 = trait de l'ancre), recadrée au plus près ; None si absente."""
+        if hasattr(self, "_cov_ancre"):
+            return self._cov_ancre
+        self._cov_ancre = None
+        try:
+            src = self._image_ancre()
+            if src is None:
+                return None
+            while src.width() > 300:
+                src = src.subsample(2)
+            w, h = src.width(), src.height()
+            g = []
+            for y in range(h):
+                lig = []
+                for x in range(w):
+                    if src.transparency_get(x, y):
+                        lig.append(0.0)
+                        continue
+                    r, gg, b = src.get(x, y)[:3]
+                    lig.append(max(0.0, min(1.0, (215 - (0.3 * r + 0.59 * gg + 0.11 * b)) / 150)))
+                g.append(lig)
+            ys = [y for y in range(h) if max(g[y]) > 0.3]
+            xs = [x for x in range(w) if max(g[y][x] for y in range(h)) > 0.3]
+            if not ys or not xs:
+                return None
+            y0, y1, x0, x1 = max(0, ys[0] - 1), min(h, ys[-1] + 2), max(0, xs[0] - 1), min(w, xs[-1] + 2)
+            self._cov_ancre = [row[x0:x1] for row in g[y0:y1]]
+        except Exception:                            # noqa: BLE001
+            self._cov_ancre = None
+        return self._cov_ancre
+
+    def _icone_ancre(self, fond: str, couleur: str, taille: int = 26, angle: float = 0.0):
+        """Ancre A.C.I.S complète (image ancre.png, sinon dessinée), bords adoucis, « couleur » sur « fond »,
+        carré de « taille » px, inclinée de « angle » degrés (sens des aiguilles d'une montre)."""
+        try:
+            fr, fg, fb = _hex(fond)
+            cr, cg, cb = _hex(couleur)
+            a = math.radians(angle)
+            ca, sa = math.cos(a), math.sin(a)
+            cov = self._couverture_ancre_image()
+            if cov:                                   # image fournie par A.C.I.S
+                ch, cw = len(cov), len(cov[0])
+                echelle = (taille * 0.96) / max(cw * abs(ca) + ch * abs(sa), cw * abs(sa) + ch * abs(ca))
+                Q, c0 = 3, taille / 2
+                out = self.tk.PhotoImage(width=taille, height=taille)
+                lignes = []
+                for ty in range(taille):
+                    lig = []
+                    for tx in range(taille):
+                        s_ = 0.0
+                        for j in range(Q):
+                            for i in range(Q):
+                                u = (tx + (i + 0.5) / Q - c0) / echelle
+                                v = (ty + (j + 0.5) / Q - c0) / echelle
+                                xs_ = u * ca + v * sa + cw / 2
+                                ys_ = -u * sa + v * ca + ch / 2
+                                xi, yi = int(math.floor(xs_)), int(math.floor(ys_))
+                                if 0 <= xi < cw - 1 and 0 <= yi < ch - 1:
+                                    dx, dy = xs_ - xi, ys_ - yi
+                                    s_ += (cov[yi][xi] * (1 - dx) * (1 - dy) + cov[yi][xi + 1] * dx * (1 - dy)
+                                           + cov[yi + 1][xi] * (1 - dx) * dy + cov[yi + 1][xi + 1] * dx * dy)
+                        k = min(1.0, s_ / (Q * Q) * 1.15)
+                        lig.append("#%02x%02x%02x" % (int(fr + (cr - fr) * k), int(fg + (cg - fg) * k),
+                                                      int(fb + (cb - fb) * k)))
+                    lignes.append("{" + " ".join(lig) + "}")
+                out.put(" ".join(lignes))
+                return out
+            # l'ancre (2 x 2.4) tournée doit tenir dans le carré, avec une petite marge
+            echelle = (taille * 0.94) / max(2 * abs(ca) + 2.4 * abs(sa), 2 * abs(sa) + 2.4 * abs(ca))
+            Q = 4                                     # 4 x 4 points par pixel : bords adoucis
+            c0 = taille / 2
+            out = self.tk.PhotoImage(width=taille, height=taille)
+            lignes = []
+            for ty in range(taille):
+                lig = []
+                for tx in range(taille):
+                    n = 0
+                    for j in range(Q):
+                        for i in range(Q):
+                            u = (tx + (i + 0.5) / Q - c0) / echelle
+                            v = (ty + (j + 0.5) / Q - c0) / echelle
+                            if self._dans_ancre(u * ca + v * sa, -u * sa + v * ca):
+                                n += 1
+                    k = n / (Q * Q)
+                    lig.append("#%02x%02x%02x" % (int(fr + (cr - fr) * k), int(fg + (cg - fg) * k),
+                                                  int(fb + (cb - fb) * k)))
+                lignes.append("{" + " ".join(lig) + "}")
+            out.put(" ".join(lignes))
+            return out
+        except Exception:                            # noqa: BLE001
+            return None
 
     def _logo_filigrane(self):
         """Logo A.C.I.S (ressources/logo_256.png ou logo_144.png) éclairci vers la couleur de la terre ; None si absent."""
