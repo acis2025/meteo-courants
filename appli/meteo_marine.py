@@ -268,8 +268,8 @@ def auto_installation() -> bool:
 
 
 # =========================================================================== interface
-def dernier_fichier(dossier: str) -> str:
-    """Dernier fichier météo téléchargé (date écrite dans le nom = date Internet), ou ""."""
+def fichiers_meteo(dossier: str) -> list:
+    """Fichiers météo téléchargés, du plus récent au plus ancien (date écrite dans le nom = date Internet)."""
     import glob
     import re
     tous = []
@@ -277,7 +277,13 @@ def dernier_fichier(dossier: str) -> str:
         m = re.search(r"_(\d{8}_\d{4})\.grb2$", f)
         if m:
             tous.append((m.group(1), "complet" in os.path.basename(f), f))
-    return max(tous)[2] if tous else ""
+    return [t[2] for t in sorted(tous, reverse=True)]
+
+
+def dernier_fichier(dossier: str) -> str:
+    """Dernier fichier météo téléchargé, ou ""."""
+    tous = fichiers_meteo(dossier)
+    return tous[0] if tous else ""
 
 
 def interface() -> None:
@@ -646,30 +652,93 @@ def interface() -> None:
     hote = {"telecharger": lambda: lancer(True), "abonnement": abonnement, "activer": fenetre_activation,
             "parametres": parametres_programme, "quitter": root.destroy}
 
+    def ecarter(f: str):
+        """Fichier météo illisible : renommé « .abime » (gardé pour analyse, jamais rouvert)."""
+        try:
+            os.replace(f, f + ".abime")
+        except OSError:
+            pass
+        log(f"Fichier météo illisible écarté : {os.path.basename(f)}")
+
+    def erreur_carte(e: Exception):
+        """La carte elle-même ne s'ouvre pas : écran d'attente avec « Réessayer » et « Envoyer le problème »."""
+        import traceback
+        etat["erreur"] = "".join(traceback.format_exception_only(type(e), e)).strip()[-400:]
+        log(f"ACIS MétéoNav : {etat['erreur']}")
+        if etat["attente"] is None:
+            ecran_attente()
+        etat["attente"]["erreur"].pack(pady=(2, 8))
+        statut("✖ La carte ne s'ouvre pas. Cliquez « Réessayer », ou envoyez le problème à A.C.I.S.", "red")
+
     def afficher(f: str) -> bool:
-        """Montre le fichier météo dans la carte (ouverte si besoin)."""
-        if etat["carte"] is not None:
-            try:
-                etat["carte"].charger(f)
-                return True
-            except Exception as e:                     # noqa: BLE001
-                log(f"ACIS MétéoNav : {e}")
-                statut("✖ Fichier météo illisible", "red")
-                return False
+        """Montre la météo dans la carte (ouverte si besoin). Un fichier abîmé est écarté et le précédent est pris ;
+        s'il n'en reste aucun, un nouveau téléchargement part tout seul."""
         try:
             import visionneuse                         # importée ici : un souci de la carte ne bloque pas le reste
-            v = visionneuse.ouvrir(f, parent=root, version=version_texte(), maintenant=etat.get("heure"), hote=hote)
         except Exception as e:                         # noqa: BLE001
-            log(f"ACIS MétéoNav : {e}")
-            if etat["attente"] is None:
-                ecran_attente()
-            statut(f"✖ Carte indisponible — contactez {TELEPHONES}", "red")
+            erreur_carte(e)
             return False
-        etat["carte"] = v
+        candidats = [f] + [g for g in fichiers_meteo(lire_ui()["dossier"]) if g != f]
+        for g in candidats:
+            try:
+                visionneuse.Donnees(g)                 # le fichier se lit-il ?
+            except Exception as e:                     # noqa: BLE001
+                log(f"{os.path.basename(g)} : {e}")
+                ecarter(g)
+                continue
+            if etat["carte"] is not None:              # carte déjà ouverte : nouvelle météo
+                try:
+                    etat["carte"].charger(g)
+                except Exception as e:                 # noqa: BLE001
+                    etat["erreur"] = str(e)
+                    log(f"ACIS MétéoNav : {e}")
+                    statut("✖ Nouvelle météo non affichée (détails : drapeau → Paramètres → Journal)", "red")
+                    return False
+                etat["reparation"] = False
+                return True
+            try:
+                v = visionneuse.ouvrir(g, parent=root, version=version_texte(), maintenant=etat.get("heure"), hote=hote)
+            except Exception as e:                     # noqa: BLE001
+                erreur_carte(e)
+                return False
+            etat["carte"], etat["erreur"], etat["reparation"] = v, None, False
+            if etat["attente"] is not None:
+                etat["attente"]["win"].destroy()
+                etat["attente"] = None
+            return True
+        # aucun fichier lisible : on en retélécharge un (une seule fois de suite)
+        if etat["carte"] is None and etat["attente"] is None:
+            ecran_attente()
+        if not etat.get("reparation"):
+            etat["reparation"] = True
+            statut("Fichier météo abîmé : nouveau téléchargement…", "red")
+            root.after(500, lambda: lancer(manuel=False))
+        else:
+            statut(f"✖ Météo illisible même après un nouveau téléchargement — contactez {TELEPHONES}", "red")
+        return False
+
+    def reessayer():
+        etat["erreur"] = None
         if etat["attente"] is not None:
-            etat["attente"]["win"].destroy()
-            etat["attente"] = None
-        return True
+            etat["attente"]["erreur"].pack_forget()
+        f = dernier_fichier(lire_ui()["dossier"])
+        if f:
+            statut("Nouvel essai…")
+            root.after(100, lambda: afficher(f))
+        else:
+            lancer(True)
+
+    def envoyer_probleme():
+        """WhatsApp vers A.C.I.S avec un message déjà écrit : client, PC, version, erreur exacte."""
+        nom = etat["info"]["nom"] if etat.get("info") else "(abonnement non activé)"
+        message = (f"Météo Marine Tunisie — la carte ne s'ouvre pas\nClient : {nom}\n"
+                   f"PC : {licence.identifiant_machine()}\nVersion : {version_texte()}\n"
+                   f"Erreur : {etat.get('erreur') or 'inconnue'}")
+        try:
+            webbrowser.open(lien_whatsapp(AGENCES[0][2], message))
+            log("Problème envoyé à A.C.I.S par WhatsApp")
+        except Exception:                              # noqa: BLE001
+            messagebox.showinfo("A.C.I.S", f"Appelez A.C.I.S : {TELEPHONES}\n\n{message}", parent=fenetre())
 
     def ecran_attente():
         """1er lancement (aucun fichier météo) : en attendant le 1er téléchargement."""
@@ -677,7 +746,7 @@ def interface() -> None:
         w.title(f"Météo Marine Tunisie — {MARQUE}")
         w.protocol("WM_DELETE_WINDOW", root.destroy)
         sl, sh = w.winfo_screenwidth(), w.winfo_screenheight()
-        haut = min(470, sh - 120)
+        haut = min(520, sh - 120)
         w.geometry(f"560x{haut}+{max(0, (sl - 560) // 2)}+{max(0, (sh - 70 - haut) // 2)}")
         pied = tk.Frame(w, bg=BLEU); pied.pack(side="bottom", fill="x")
         tk.Label(pied, text=f"{MARQUE}  •  {TELEPHONES}", bg=BLEU, fg="white",
@@ -713,7 +782,14 @@ def interface() -> None:
             tk.Button(p, text="✔ Fermer", command=p.destroy, bg=BLEU, fg="white", relief="flat",
                       font=("Segoe UI", 11, "bold"), pady=4).pack(fill="x", padx=14, pady=(0, 12))
         ttk.Button(act, text="⚙ Paramètres", command=parametres).pack(side="left", padx=4)
-        etat["attente"] = {"win": w, "abo": abo, "btn": btn, "statut": st, "barre": barre}
+        # si la carte ne s'ouvre pas : deux gros boutons (montrés seulement dans ce cas)
+        err = tk.Frame(w)
+        tk.Button(err, text="↻ Réessayer", command=reessayer, font=("Segoe UI", 11, "bold"), bg="#eef0f6", fg=BLEU,
+                  relief="flat", padx=14, pady=4, cursor="hand2").pack(side="left", padx=4)
+        tk.Button(err, text="✆ Envoyer le problème à A.C.I.S (WhatsApp)", command=envoyer_probleme,
+                  font=("Segoe UI", 11, "bold"), bg=VERT_WA, fg="white", activebackground="#0f7a40",
+                  activeforeground="white", relief="flat", padx=14, pady=4, cursor="hand2").pack(side="left", padx=4)
+        etat["attente"] = {"win": w, "abo": abo, "btn": btn, "statut": st, "barre": barre, "erreur": err}
 
     # ---------------- démarrage
     f0 = dernier_fichier(c["dossier"])
