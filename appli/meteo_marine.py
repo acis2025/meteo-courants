@@ -1,6 +1,7 @@
 """
-Météo Marine Tunisie — télécharge les GRIB (vent + vagues, 16 jours) sur toute
-la zone tunisienne et les ouvre dans XyGrib. Accès soumis à un abonnement annuel.
+Météo Marine Tunisie — télécharge la météo marine (vent, vagues, courant, marée, 16 jours) sur toute
+la zone tunisienne et l'affiche dans la carte ACIS MétéoNav (aucun autre logiciel nécessaire).
+Accès soumis à un abonnement annuel.
 
 Utilisation :
     MeteoMarineTN.exe            -> fenêtre
@@ -13,7 +14,6 @@ if __name__ == "__main__":              # mises à jour EN LIGNE : à faire AVAN
     maj_en_ligne.lancer_principal("meteo_marine")   # la version téléchargée prend le relais s'il y en a une
 
 import datetime as dt
-import hashlib
 import json
 import os
 import shutil
@@ -63,18 +63,9 @@ def ressource(nom: str) -> str:
     return os.path.join(base, "ressources", nom)
 CONFIG = os.path.join(licence.dossier_app(), "config.json")
 
-CHEMINS_XYGRIB = [
-    r"C:\Program Files\XyGrib\XyGrib.exe",
-    r"C:\Program Files (x86)\XyGrib\XyGrib.exe",
-    os.path.expandvars(r"%LOCALAPPDATA%\XyGrib\XyGrib.exe"),
-    os.path.expandvars(r"%LOCALAPPDATA%\Programs\XyGrib\XyGrib.exe"),
-    "/Applications/XyGrib.app/Contents/MacOS/XyGrib",
-    "/usr/bin/xygrib", "/usr/local/bin/xygrib",
-]
-
 DEFAUT = {
     "jours": 16, "pas_h": 3, "pas_long": 6, "vent": True, "vagues": True, "fusion": True,
-    "ouvrir": True, "xygrib": "", "fermer": True, "garder": 2,
+    "garder": 2, "maree": True,
     "dossier": os.path.join(os.path.expanduser("~"), "Documents", "MeteoMarineTN"),
 }
 
@@ -90,15 +81,6 @@ def charger_config() -> dict:
 
 def sauver_config(c: dict) -> None:
     json.dump(c, open(CONFIG, "w", encoding="utf-8"), indent=1)
-
-
-def trouver_xygrib(c: dict) -> str:
-    if c.get("xygrib") and os.path.exists(c["xygrib"]):
-        return c["xygrib"]
-    for p in CHEMINS_XYGRIB:
-        if os.path.exists(p):
-            return p
-    return shutil.which("xygrib") or shutil.which("XyGrib") or ""
 
 
 def nettoyer_historique(dossier: str, garder: int = 2) -> int:
@@ -125,60 +107,9 @@ def nettoyer_historique(dossier: str, garder: int = 2) -> int:
             try:
                 os.remove(chemin)
                 supprimes += 1
-            except OSError:      # ex. fichier encore ouvert dans XyGrib : on réessaiera la prochaine fois
+            except OSError:      # ex. fichier encore ouvert : on réessaiera la prochaine fois
                 pass
     return supprimes
-
-
-def appliquer_reglages_xygrib(c: dict) -> None:
-    """Installe les réglages XyGrib d'A.C.I.S (tableau météo : vent, rafales, vagues… ; carte centrée Tunisie ;
-    français) dans le xygrib.ini du PC, une fois par version des réglages. Les chemins du PC ne sont pas touchés."""
-    try:
-        ref = open(ressource("xygrib_reglages.ini"), encoding="utf-8").read()
-    except OSError:
-        return
-    empreinte = hashlib.sha256(ref.encode("utf-8")).hexdigest()[:12]
-    if c.get("reglages_xygrib") == empreinte:
-        return
-    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.config")
-    ini = os.path.join(base, "openGribs", "XyGrib", "xygrib.ini") if sys.platform == "win32" \
-        else os.path.expanduser("~/.config/xygrib.ini")
-    nouveaux = dict(l.split("=", 1) for l in ref.splitlines() if "=" in l and not l.startswith("["))
-    try:
-        lignes = open(ini, encoding="utf-8").read().splitlines() if os.path.exists(ini) else ["[main]"]
-        sortie, section, vus = [], None, set()
-        for l in lignes:
-            if l.startswith("["):
-                if section == "[main]":                      # ajoute les clés absentes en fin de section
-                    sortie += [f"{k}={v}" for k, v in nouveaux.items() if k not in vus]
-                section = l.strip()
-            elif section == "[main]" and "=" in l:
-                k = l.split("=", 1)[0]
-                if k in nouveaux:
-                    l = f"{k}={nouveaux[k]}"; vus.add(k)
-            sortie.append(l)
-        if section == "[main]":
-            sortie += [f"{k}={v}" for k, v in nouveaux.items() if k not in vus]
-        elif "[main]" not in lignes:
-            sortie += ["[main]"] + [f"{k}={v}" for k, v in nouveaux.items()]
-        os.makedirs(os.path.dirname(ini), exist_ok=True)
-        open(ini, "w", encoding="utf-8").write("\n".join(sortie) + "\n")
-        c["reglages_xygrib"] = empreinte
-        sauver_config(c)
-    except OSError:
-        pass
-
-
-def ouvrir_dans_xygrib(fichier: str, c: dict) -> str:
-    appliquer_reglages_xygrib(c)
-    exe = trouver_xygrib(c)
-    if exe:
-        subprocess.Popen([exe, fichier])
-        return f"Ouverture dans XyGrib : {os.path.basename(fichier)}"
-    if sys.platform == "win32":
-        os.startfile(fichier)  # programme associé aux .grb2
-        return "XyGrib introuvable : ouverture avec le programme associé aux .grb2"
-    return "XyGrib introuvable : indiquez son emplacement dans Paramètres"
 
 
 def executer(c: dict, tel: gd.Telechargeur) -> list[str]:
@@ -352,7 +283,7 @@ def dernier_fichier(dossier: str) -> str:
 def interface() -> None:
     """La carte ACIS MétéoNav est la fenêtre du programme : elle s'ouvre sur la dernière météo, la météo se
     télécharge seule à l'ouverture (bouton « ⬇ Télécharger » toujours là), le nom du client et la validité de
-    l'abonnement sont en haut, et tout le reste (téléchargement, XyGrib, abonnement) est dans Paramètres (drapeau).
+    l'abonnement sont en haut, et tout le reste (téléchargement, abonnement) est dans Paramètres (drapeau).
     Sans aucun fichier météo (1er lancement), un petit écran d'attente la remplace jusqu'au 1er téléchargement."""
     import tkinter as tk
     import webbrowser
@@ -378,9 +309,8 @@ def interface() -> None:
     # paramètres du programme (gardés même quand la fenêtre Paramètres est fermée)
     v_vent = tk.BooleanVar(value=c["vent"]); v_vag = tk.BooleanVar(value=c["vagues"])
     v_maree = tk.BooleanVar(value=c.get("maree", False))
-    v_ouv = tk.BooleanVar(value=c["ouvrir"])
     v_jours = tk.StringVar(value=str(c["jours"])); v_pas = tk.StringVar(value=str(c["pas_h"]))
-    v_dos = tk.StringVar(value=c["dossier"]); v_xy = tk.StringVar(value=trouver_xygrib(c))
+    v_dos = tk.StringVar(value=c["dossier"])
     v_garder = tk.BooleanVar(value=int(c.get("garder", 2)) > 0)
     v_auto = tk.BooleanVar(value=c.get("auto_demarrage", True))
 
@@ -560,7 +490,7 @@ def interface() -> None:
         for t in ("Prévisions vent, vagues, courant et marée sur 16 jours",
                   "Côtes et haute mer tunisiennes (30°N–39°N / 7°E–14°E)",
                   "Données : NOAA GFS 0.25° et GFS-Wave · Copernicus Marine",
-                  "Affichage : ACIS MétéoNav (et XyGrib)"):
+                  "Affichage : carte ACIS MétéoNav"):
             tk.Label(cad, text=t, font=("Segoe UI", 9), fg="#333", bg="white").pack()
         tk.Label(cad, text=SIGNATURE[0].upper() + SIGNATURE[1:], font=("Segoe UI", 10, "italic"),
                  fg=BLEU, bg="white").pack(pady=(12, 0))
@@ -574,23 +504,15 @@ def interface() -> None:
     # ---------------- réglages
     def lire_ui() -> dict:
         try:
-            c.update(vent=v_vent.get(), vagues=v_vag.get(), maree=v_maree.get(), ouvrir=v_ouv.get(), fusion=True,
-                     jours=int(v_jours.get()), pas_h=int(v_pas.get()), dossier=v_dos.get(), xygrib=v_xy.get(),
-                     garder=2 if v_garder.get() else 0, auto_demarrage=v_auto.get(), fermer=False)
+            c.update(vent=v_vent.get(), vagues=v_vag.get(), maree=v_maree.get(), fusion=True,
+                     jours=int(v_jours.get()), pas_h=int(v_pas.get()), dossier=v_dos.get(),
+                     garder=2 if v_garder.get() else 0, auto_demarrage=v_auto.get())
+            for ancien in ("ouvrir", "xygrib", "fermer", "reglages_xygrib"):   # XyGrib n'est plus utilisé
+                c.pop(ancien, None)
             sauver_config(c)
         except Exception:
             pass
         return c
-
-    def ouvrir_dernier(parent=None):
-        cfg = lire_ui()
-        fichiers = etat["derniers"] or ([dernier_fichier(cfg["dossier"])] if dernier_fichier(cfg["dossier"]) else [])
-        if not fichiers:
-            f = filedialog.askopenfilename(initialdir=cfg["dossier"], parent=parent or fenetre(),
-                                           filetypes=[("GRIB", "*.grb2 *.grb *.grib2")])
-            fichiers = [f] if f else []
-        for f in fichiers:
-            log(ouvrir_dans_xygrib(f, cfg))
 
     def parametres_programme(cadre, fen):
         """Ancien menu de la première page, dans la fenêtre Paramètres de la carte (colonne de droite)."""
@@ -625,20 +547,6 @@ def interface() -> None:
             d = filedialog.askdirectory(initialdir=v_dos.get(), parent=fen)
             if d: v_dos.set(d); lire_ui()
         ttk.Button(l3, text="…", width=3, command=choisir_dossier).pack(side="left")
-
-        titre("XyGrib")
-        l4 = ligne()
-        tk.Label(l4, text="XyGrib :", **opt).pack(side="left")
-        ttk.Entry(l4, textvariable=v_xy, width=36).pack(side="left", fill="x", expand=True, padx=4)
-
-        def choisir_xy():
-            f = filedialog.askopenfilename(title="Emplacement de XyGrib.exe", parent=fen)
-            if f: v_xy.set(f); lire_ui()
-        ttk.Button(l4, text="…", width=3, command=choisir_xy).pack(side="left")
-        l5 = ligne()
-        tk.Checkbutton(l5, text="Ouvrir aussi dans XyGrib après « Télécharger »", variable=v_ouv,
-                       command=lire_ui, **opt).pack(side="left")
-        ttk.Button(cadre, text="Ouvrir la météo dans XyGrib", command=lambda: ouvrir_dernier(fen)).pack(anchor="w", pady=(2, 0))
 
         titre("Abonnement")
         lbl = tk.Label(cadre, text="", bg=B, font=("Segoe UI", 10, "bold"), anchor="w", justify="left", wraplength=420)
@@ -716,9 +624,6 @@ def interface() -> None:
                 statut(f"✔ Météo à jour{info_run}", "green")
                 if fichiers:
                     root.after(0, lambda: afficher(fichiers[-1]))
-                if manuel and cfg["ouvrir"] and trouver_xygrib(cfg):
-                    for f in fichiers:
-                        log(ouvrir_dans_xygrib(f, cfg))
             except licence.LicenceInvalide as e:
                 statut(f"Licence : {e}", "red")
             except Exception as e:
@@ -758,7 +663,7 @@ def interface() -> None:
             log(f"ACIS MétéoNav : {e}")
             if etat["attente"] is None:
                 ecran_attente()
-            statut("✖ Carte indisponible : drapeau → Paramètres → « Ouvrir la météo dans XyGrib »", "red")
+            statut(f"✖ Carte indisponible — contactez {TELEPHONES}", "red")
             return False
         etat["carte"] = v
         if etat["attente"] is not None:

@@ -1,7 +1,7 @@
 """
 ACIS MétéoNav — visionneuse météo du programme PC (Météo Marine Tunisie).
 
-Affiche le fichier GRIB2 téléchargé, comme XyGrib, mais à la marque A.C.I.S et sans rien installer :
+Affiche le fichier GRIB2 téléchargé, à la marque A.C.I.S et sans rien installer (aucun autre logiciel) :
 Python + tkinter seulement (Windows 7 à 11, aucun navigateur nécessaire).
   - couches : vent, rafales, vagues, courant, pluie, nuages (mêmes couleurs que l'appli téléphone) ;
   - barbules de vent et flèches (vagues, courant) avec leur valeur écrite à côté ;
@@ -9,7 +9,7 @@ Python + tkinter seulement (Windows 7 à 11, aucun navigateur nécessaire).
     que les vents forts sont sous-estimés à une échéance, la valeur est suivie de « (+N) » ;
   - curseur de temps (heure de Tunisie), animation, zoom molette, déplacement à la souris,
     fiche complète du point cliqué.
-Le fichier GRIB n'est jamais modifié : XyGrib et la carte montrent la même prévision NOAA.
+Le fichier GRIB n'est jamais modifié : la carte montre la prévision NOAA telle quelle.
 
 Essai : python visionneuse.py Tunisie_complet_….grb2
 """
@@ -1004,7 +1004,7 @@ class Visionneuse:
         corps.pack(side="left", fill="both", anchor="n")
         tk.Label(corps, text="Carte", bg="#f7f8fc", fg=BLEU, font=("Segoe UI", 11, "bold"),
                  anchor="w").pack(fill="x", pady=(0, 4))
-        if "parametres" in self.hote:                # programme : téléchargement, abonnement, XyGrib…
+        if "parametres" in self.hote:                # programme : téléchargement, abonnement…
             tk.Frame(colonnes, bg="#c9cfe3", width=1).pack(side="left", fill="y", pady=10)
             prog = tk.Frame(colonnes, bg="#f7f8fc", padx=14, pady=10)
             prog.pack(side="left", fill="both", expand=True, anchor="n")
