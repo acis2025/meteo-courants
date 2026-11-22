@@ -146,6 +146,26 @@ def lire_cotes() -> tuple:
     return out[0], out[1]
 
 
+def dessiner_drapeau_tunisie(cv, x0: float, y0: float, larg: float, haut: float) -> None:
+    """Drapeau de la Tunisie (rouge, disque blanc, croissant et étoile rouges), proportions 3:2."""
+    rouge = "#e70013"
+    cv.create_rectangle(x0, y0, x0 + larg, y0 + haut, fill=rouge, outline="#7a0010")
+    cx, cy = x0 + larg / 2, y0 + haut / 2
+    R = haut / 4                                         # disque blanc : diamètre = moitié de la hauteur
+    cv.create_oval(cx - R, cy - R, cx + R, cy + R, fill="white", outline="white")
+    r1 = R * 0.75                                        # croissant : disque rouge moins un disque blanc décalé
+    cv.create_oval(cx - r1, cy - r1, cx + r1, cy + r1, fill=rouge, outline=rouge)
+    r2, dx = R * 0.6, R * 0.25
+    cv.create_oval(cx + dx - r2, cy - r2, cx + dx + r2, cy + r2, fill="white", outline="white")
+    sx, re, ri = cx + R * 0.2, R * 0.45, R * 0.18        # étoile à cinq branches, une pointe vers le croissant
+    pts = []
+    for i in range(10):
+        a = math.radians(180 + i * 36)
+        r = re if i % 2 == 0 else ri
+        pts += (sx + r * math.cos(a), cy + r * math.sin(a))
+    cv.create_polygon(pts, fill=rouge, outline="")
+
+
 # ------------------------------------------------------------------ données
 class Grille:
     """Valeurs d'un champ aux nœuds (liste, None = absent) + interpolation bilinéaire rapide."""
@@ -409,6 +429,9 @@ class Visionneuse:
                                        bg=BLEU, fg="white", selectcolor=BLEU, activebackground=BLEU,
                                        font=("Segoe UI", 9))
         self.cb_marge.pack(side="left")
+        drapeau = tk.Canvas(haut, width=50, height=34, bg=BLEU, highlightthickness=0)
+        drapeau.pack(side="right", padx=(16, 10), pady=2)            # isolé, en haut à droite
+        dessiner_drapeau_tunisie(drapeau, 1, 1, 48, 32)
         self.zone = ttk.Combobox(haut, values=[z[0] for z in ZONES], state="readonly", width=26)
         self.zone.set(ZONES[0][0])
         self.zone.pack(side="right", padx=6)
