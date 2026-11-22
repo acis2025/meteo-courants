@@ -143,10 +143,18 @@ def palette(ech: list, reguliere: bool = False, n: int = 256) -> tuple:
 
 
 def dm(v: float, pos: str, neg: str) -> str:
-    """Degrés + minutes décimales (format GPS marin)."""
-    a = abs(v)
+    """Degrés + minutes à 3 décimales, lettre devant (format A.C.I.S) : « N34°38.808 »."""
+    a = round(abs(v) * 60000) / 60000                  # arrondi au millième de minute
     d = int(a)
-    return f"{d}°{(a - d) * 60:04.1f}' {pos if v >= 0 else neg}"
+    m = (a - d) * 60
+    if m >= 59.9995:                                   # 59.9996' -> degré suivant
+        d, m = d + 1, 0.0
+    return f"{pos if v >= 0 else neg}{d}°{m:06.3f}"
+
+
+def position(la: float, lo: float) -> str:
+    """Position au format A.C.I.S : « N34°38.808-E10°45.341 »."""
+    return f"{dm(la, 'N', 'S')}-{dm(lo, 'E', 'W')}"
 
 
 def cardinal(deg: float) -> str:
@@ -2034,7 +2042,7 @@ class Visionneuse:
         point = self.survol or self.repere
         if point:
             la, lo = point
-            f.insert("end", f"{dm(la, 'N', 'S')}   {dm(lo, 'E', 'O')}\n", "b")
+            f.insert("end", position(la, lo) + "\n", "b")
             run = self.d.run + TUNISIE
             if not self.d.vide:
                 f.insert("end", f"Prévue pour {JOURS[t.weekday()]} {t:%d/%m} {t:%H}h · fichier NOAA du "
