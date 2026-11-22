@@ -290,14 +290,15 @@ def interface() -> None:
     """La carte ACIS MétéoNav est la fenêtre du programme : elle s'ouvre sur la dernière météo, la météo se
     télécharge seule à l'ouverture (bouton « ⬇ Télécharger » toujours là), le nom du client et la validité de
     l'abonnement sont en haut, et tout le reste (téléchargement, abonnement) est dans Paramètres (drapeau).
-    Sans aucun fichier météo (1er lancement), un petit écran d'attente la remplace jusqu'au 1er téléchargement."""
+    Sans aucun fichier météo (1er lancement, fichier abîmé), la carte s'ouvre quand même, vide, et se remplit
+    dès que la météo arrive."""
     import tkinter as tk
     import webbrowser
     from tkinter import filedialog, messagebox, ttk
 
     c = charger_config()
     root = tk.Tk()
-    root.withdraw()                     # cachée : la carte (ou l'écran d'attente) est la fenêtre visible
+    root.withdraw()                     # cachée : la carte est la fenêtre visible
     root.title(f"Météo Marine Tunisie — {MARQUE}")
     try:
         root.iconbitmap(default=ressource("icone.ico"))
@@ -309,7 +310,7 @@ def interface() -> None:
     except Exception:
         pass
     etat: dict = {"heure": None, "tel": None, "derniers": [], "info": None, "en_cours": False,
-                  "carte": None, "attente": None, "journal": [], "fen_act": None, "txt_journal": None,
+                  "carte": None, "journal": [], "fen_act": None, "txt_journal": None,
                   "lbl_abo_param": None}
 
     # paramètres du programme (gardés même quand la fenêtre Paramètres est fermée)
@@ -322,13 +323,9 @@ def interface() -> None:
 
     def fenetre():
         """Fenêtre visible du moment (parent des petites fenêtres)."""
-        if etat["carte"] is not None:
-            return etat["carte"].win
-        if etat["attente"] is not None:
-            return etat["attente"]["win"]
-        return root
+        return etat["carte"].win if etat["carte"] is not None else root
 
-    # ---------------- journal, état, progression (affichés dans la carte ou l'écran d'attente)
+    # ---------------- journal, état, progression (affichés dans la carte)
     def log(msg):
         def f():
             etat["journal"].append(msg)
@@ -349,16 +346,12 @@ def interface() -> None:
         def f():
             if etat["carte"] is not None:
                 etat["carte"].statut(msg, sombre)
-            elif etat["attente"] is not None:
-                etat["attente"]["statut"].config(text=msg, fg=clair)
         root.after(0, f)
 
     def progression(i, n):
         def f():
             if etat["carte"] is not None:
                 etat["carte"].progression(i, n)
-            elif etat["attente"] is not None:
-                etat["attente"]["barre"].config(maximum=max(n, 1), value=i)
         root.after(0, f)
 
     # ---------------- licence
@@ -384,8 +377,6 @@ def interface() -> None:
         nom, detail, _coul = abonnement()
         if etat["carte"] is not None:
             etat["carte"].maj_abonnement()
-        if etat["attente"] is not None:
-            etat["attente"]["abo"].config(text=f"{nom}\n{detail}", fg="green" if ok else "red")
         lbl = etat.get("lbl_abo_param")
         try:
             if lbl is not None and lbl.winfo_exists():
@@ -591,8 +582,6 @@ def interface() -> None:
         etat["en_cours"] = True
         if etat["carte"] is not None:
             etat["carte"].en_cours(True)
-        if etat["attente"] is not None:
-            etat["attente"]["btn"].config(state="disabled", text="  TÉLÉCHARGEMENT…")
         debut = time.time()
         etape = {"nom": "", "t0": debut}
 
@@ -642,13 +631,11 @@ def interface() -> None:
                 def fin():
                     if etat["carte"] is not None:
                         etat["carte"].en_cours(False)
-                    if etat["attente"] is not None:
-                        etat["attente"]["btn"].config(state="normal", text="  TÉLÉCHARGER LA MÉTÉO")
                     maj_licence(etat["heure"])
                 root.after(0, fin)
         threading.Thread(target=travail, daemon=True).start()
 
-    # ---------------- carte (fenêtre principale) et écran d'attente
+    # ---------------- carte (fenêtre principale, toujours ouverte)
     hote = {"telecharger": lambda: lancer(True), "abonnement": abonnement, "activer": fenetre_activation,
             "parametres": parametres_programme, "quitter": root.destroy}
 
@@ -661,24 +648,56 @@ def interface() -> None:
         log(f"Fichier météo illisible écarté : {os.path.basename(f)}")
 
     def erreur_carte(e: Exception):
-        """La carte elle-même ne s'ouvre pas : écran d'attente avec « Réessayer » et « Envoyer le problème »."""
+        """La carte elle-même ne s'ouvre pas (cas extrême) : petit message Windows, pas d'autre fenêtre."""
         import traceback
         etat["erreur"] = "".join(traceback.format_exception_only(type(e), e)).strip()[-400:]
         log(f"ACIS MétéoNav : {etat['erreur']}")
-        if etat["attente"] is None:
-            ecran_attente()
-        etat["attente"]["erreur"].pack(pady=(2, 8))
-        statut("✖ La carte ne s'ouvre pas. Cliquez « Réessayer », ou envoyez le problème à A.C.I.S.", "red")
+        # la fenêtre principale est cachée : Windows cacherait aussi le message -> support transparent, centré
+        sl, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.geometry(f"1x1+{sl // 2}+{sh // 3}")
+        try:
+            root.attributes("-alpha", 0.0)
+        except Exception:
+            pass
+        root.deiconify()
+        root.lift()
+        try:
+            encore = messagebox.askretrycancel("Météo Marine Tunisie",
+                                               "La carte ne s'ouvre pas.\n\n« Recommencer » : nouvel essai\n"
+                                               "« Annuler » : envoyer le problème à A.C.I.S", parent=root)
+            envoyer = (not encore) and messagebox.askyesno(
+                "Météo Marine Tunisie", "Envoyer le problème à A.C.I.S par WhatsApp ?\n(client, PC, version et erreur)",
+                parent=root)
+        finally:
+            root.withdraw()
+        if encore:
+            root.after(100, demarrer_carte)
+            return
+        if envoyer:
+            envoyer_probleme()
+        root.after(300, root.destroy)
 
-    def afficher(f: str) -> bool:
-        """Montre la météo dans la carte (ouverte si besoin). Un fichier abîmé est écarté et le précédent est pris ;
-        s'il n'en reste aucun, un nouveau téléchargement part tout seul."""
+    def ouvrir_carte(f) -> bool:
+        """Ouvre la carte (fichier f, ou vide si f est None). False si la carte elle-même ne s'ouvre pas."""
         try:
             import visionneuse                         # importée ici : un souci de la carte ne bloque pas le reste
+            etat["carte"] = visionneuse.ouvrir(f, parent=root, version=version_texte(),
+                                               maintenant=etat.get("heure"), hote=hote)
+            etat["erreur"] = None
+            return True
         except Exception as e:                         # noqa: BLE001
             erreur_carte(e)
             return False
-        candidats = [f] + [g for g in fichiers_meteo(lire_ui()["dossier"]) if g != f]
+
+    def afficher(f: str) -> bool:
+        """Montre la météo dans la carte. Un fichier abîmé est écarté et le précédent est pris ;
+        s'il n'en reste aucun, la carte reste vide et un nouveau téléchargement part tout seul."""
+        try:
+            import visionneuse
+        except Exception as e:                         # noqa: BLE001
+            erreur_carte(e)
+            return False
+        candidats = ([f] if f else []) + [g for g in fichiers_meteo(lire_ui()["dossier"]) if g != f]
         for g in candidats:
             try:
                 visionneuse.Donnees(g)                 # le fichier se lit-il ?
@@ -686,47 +705,30 @@ def interface() -> None:
                 log(f"{os.path.basename(g)} : {e}")
                 ecarter(g)
                 continue
-            if etat["carte"] is not None:              # carte déjà ouverte : nouvelle météo
-                try:
-                    etat["carte"].charger(g)
-                except Exception as e:                 # noqa: BLE001
-                    etat["erreur"] = str(e)
-                    log(f"ACIS MétéoNav : {e}")
-                    statut("✖ Nouvelle météo non affichée (détails : drapeau → Paramètres → Journal)", "red")
-                    return False
-                etat["reparation"] = False
-                return True
+            if etat["carte"] is None:
+                return ouvrir_carte(g)
             try:
-                v = visionneuse.ouvrir(g, parent=root, version=version_texte(), maintenant=etat.get("heure"), hote=hote)
+                etat["carte"].charger(g)
             except Exception as e:                     # noqa: BLE001
-                erreur_carte(e)
+                etat["erreur"] = str(e)
+                log(f"ACIS MétéoNav : {e}")
+                statut("✖ Nouvelle météo non affichée (détails : drapeau → Paramètres → Journal)", "red")
                 return False
-            etat["carte"], etat["erreur"], etat["reparation"] = v, None, False
-            if etat["attente"] is not None:
-                etat["attente"]["win"].destroy()
-                etat["attente"] = None
+            etat["reparation"] = False
             return True
-        # aucun fichier lisible : on en retélécharge un (une seule fois de suite)
-        if etat["carte"] is None and etat["attente"] is None:
-            ecran_attente()
-        if not etat.get("reparation"):
+        # aucun fichier lisible : carte vide, et un nouveau téléchargement (une seule fois de suite)
+        if etat["carte"] is None and not ouvrir_carte(None):
+            return False
+        if candidats and not etat.get("reparation"):
             etat["reparation"] = True
             statut("Fichier météo abîmé : nouveau téléchargement…", "red")
             root.after(500, lambda: lancer(manuel=False))
-        else:
+        elif candidats:
             statut(f"✖ Météo illisible même après un nouveau téléchargement — contactez {TELEPHONES}", "red")
         return False
 
-    def reessayer():
-        etat["erreur"] = None
-        if etat["attente"] is not None:
-            etat["attente"]["erreur"].pack_forget()
-        f = dernier_fichier(lire_ui()["dossier"])
-        if f:
-            statut("Nouvel essai…")
-            root.after(100, lambda: afficher(f))
-        else:
-            lancer(True)
+    def demarrer_carte():
+        afficher(dernier_fichier(lire_ui()["dossier"]))
 
     def envoyer_probleme():
         """WhatsApp vers A.C.I.S avec un message déjà écrit : client, PC, version, erreur exacte."""
@@ -740,61 +742,9 @@ def interface() -> None:
         except Exception:                              # noqa: BLE001
             messagebox.showinfo("A.C.I.S", f"Appelez A.C.I.S : {TELEPHONES}\n\n{message}", parent=fenetre())
 
-    def ecran_attente():
-        """1er lancement (aucun fichier météo) : en attendant le 1er téléchargement."""
-        w = tk.Toplevel(root)
-        w.title(f"Météo Marine Tunisie — {MARQUE}")
-        w.protocol("WM_DELETE_WINDOW", root.destroy)
-        sl, sh = w.winfo_screenwidth(), w.winfo_screenheight()
-        haut = min(520, sh - 120)
-        w.geometry(f"560x{haut}+{max(0, (sl - 560) // 2)}+{max(0, (sh - 70 - haut) // 2)}")
-        pied = tk.Frame(w, bg=BLEU); pied.pack(side="bottom", fill="x")
-        tk.Label(pied, text=f"{MARQUE}  •  {TELEPHONES}", bg=BLEU, fg="white",
-                 font=("Segoe UI", 9, "bold")).pack(pady=4)
-        try:
-            try:
-                img = tk.PhotoImage(file=ressource("logo_144.png"))
-            except Exception:
-                img = tk.PhotoImage(file=ressource("logo_96.png"))
-            w._img = img
-            tk.Label(w, image=img).pack(pady=(14, 2))
-        except Exception:
-            tk.Label(w, text=MARQUE.upper(), font=("Segoe UI", 18, "bold"), fg=BLEU).pack(pady=(20, 2))
-        tk.Label(w, text="ACIS MétéoNav — Météo Marine Tunisie", font=("Segoe UI", 11, "bold"), fg=BLEU).pack()
-        abo = tk.Label(w, text="", font=("Segoe UI", 10, "bold"), justify="center")
-        abo.pack(pady=(8, 6))
-        btn = tk.Button(w, text="  TÉLÉCHARGER LA MÉTÉO", command=lambda: lancer(True), font=("Segoe UI", 15, "bold"),
-                        bg=BLEU, fg="white", activebackground="#2c3a85", activeforeground="white",
-                        disabledforeground="#c8c8c8", relief="flat", padx=18, pady=7, cursor="hand2")
-
-        btn.pack(pady=4)
-        st = tk.Label(w, text="", font=("Segoe UI", 10), fg="#333", wraplength=520, justify="center")
-        st.pack(pady=(6, 2))
-        barre = ttk.Progressbar(w, mode="determinate", length=380)
-        barre.pack(pady=2)
-        act = tk.Frame(w); act.pack(pady=8)
-        ttk.Button(act, text="Activer / renouveler", command=fenetre_activation).pack(side="left", padx=4)
-
-        def parametres():
-            p = tk.Toplevel(w); p.title("Paramètres — Météo Marine Tunisie"); p.transient(w); p.resizable(False, False)
-            cad = tk.Frame(p, bg="#f7f8fc", padx=14, pady=10); cad.pack(fill="both", expand=True)
-            parametres_programme(cad, p)
-            tk.Button(p, text="✔ Fermer", command=p.destroy, bg=BLEU, fg="white", relief="flat",
-                      font=("Segoe UI", 11, "bold"), pady=4).pack(fill="x", padx=14, pady=(0, 12))
-        ttk.Button(act, text="⚙ Paramètres", command=parametres).pack(side="left", padx=4)
-        # si la carte ne s'ouvre pas : deux gros boutons (montrés seulement dans ce cas)
-        err = tk.Frame(w)
-        tk.Button(err, text="↻ Réessayer", command=reessayer, font=("Segoe UI", 11, "bold"), bg="#eef0f6", fg=BLEU,
-                  relief="flat", padx=14, pady=4, cursor="hand2").pack(side="left", padx=4)
-        tk.Button(err, text="✆ Envoyer le problème à A.C.I.S (WhatsApp)", command=envoyer_probleme,
-                  font=("Segoe UI", 11, "bold"), bg=VERT_WA, fg="white", activebackground="#0f7a40",
-                  activeforeground="white", relief="flat", padx=14, pady=4, cursor="hand2").pack(side="left", padx=4)
-        etat["attente"] = {"win": w, "abo": abo, "btn": btn, "statut": st, "barre": barre, "erreur": err}
-
     # ---------------- démarrage
     f0 = dernier_fichier(c["dossier"])
-    if not (f0 and afficher(f0)) and etat["attente"] is None:
-        ecran_attente()
+    demarrer_carte()                                # toujours la carte (vide s'il n'y a pas encore de météo)
     if not maj_licence():
         root.after(300, fenetre_activation)
     if "--installe" in sys.argv:

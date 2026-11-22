@@ -356,7 +356,52 @@ class Grille:
         return None
 
 
+class DonneesVides:
+    """Pas encore de fichier météo (1er lancement, fichier abîmé) : la carte s'ouvre quand même (côtes, lune,
+    soleil, bouton Télécharger) et se remplit dès qu'un fichier arrive (Visionneuse.charger)."""
+    vide = True
+
+    def __init__(self):
+        self.chemin = ""
+        self.run = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
+        self.echeances = [0]
+        self.par = {0: {}}
+        self.courants = {}
+        self.zone = (30.0, 39.0, 7.0, 14.0)
+        self.mer = None
+        self.maree, self.maree_t0, self.maree_fichier = [], None, None
+
+    def date(self, k: int) -> dt.datetime:
+        return self.run
+
+    def est_mer(self, lat: float, lon: float) -> bool:
+        return True
+
+    def grille(self, couche: str, k: int):
+        return None
+
+    def vent(self, k, lat, lon):
+        return None
+
+    def courant(self, k, lat, lon):
+        return None
+
+    def direction_vagues(self, k, lat, lon):
+        return None
+
+    def fiche(self, k, lat, lon) -> dict:
+        return {}
+
+    def serie_maree(self, lat, lon):
+        return None
+
+    def heure_maree(self, t) -> float:
+        return -1
+
+
 class Donnees:
+    vide = False
+
     """Le fichier GRIB2 téléchargé, rangé par heure de prévision."""
 
     def __init__(self, chemin: str):
@@ -700,7 +745,7 @@ class Visionneuse:
         self.tk = tk
         self.ttk = ttk
         self.hote = hote or {}
-        self.d = Donnees(chemin)
+        self.d = Donnees(chemin) if chemin else DonneesVides()     # sans fichier : carte vide, prête à se remplir
         self.terres, self.frontieres = lire_cotes()
         self.precision, self.marges = {}, {}
         self.version = version
@@ -1811,6 +1856,11 @@ class Visionneuse:
             self.cv.create_text(x, y - 12, text=nom, fill="#ffffff", font=("Segoe UI", 10, "bold"))
 
     def _entete(self, couche):
+        if self.d.vide:
+            self.lbl_date.config(text="Pas encore de météo")
+            self.lbl_info.config(text="Pas encore de météo — cliquez sur « Télécharger »" if self.hote
+                                 else "Aucun fichier météo", fg="#ffd166")
+            return
         t = self.d.date(self.k) + TUNISIE
         self.lbl_date.config(text=f"{JOURS[t.weekday()]} {t:%d/%m %H}h (Tunisie)")
         h = self.maintenant()
@@ -1943,8 +1993,9 @@ class Visionneuse:
             la, lo = point
             f.insert("end", f"{dm(la, 'N', 'S')}   {dm(lo, 'E', 'O')}\n", "b")
             run = self.d.run + TUNISIE
-            f.insert("end", f"Prévue pour {JOURS[t.weekday()]} {t:%d/%m} {t:%H}h · fichier NOAA du {run:%d/%m} {run:%H}h\n",
-                     "d")
+            if not self.d.vide:
+                f.insert("end", f"Prévue pour {JOURS[t.weekday()]} {t:%d/%m} {t:%H}h · fichier NOAA du "
+                                f"{run:%d/%m} {run:%H}h\n", "d")
             v = self.d.fiche(self.k, la, lo)
             if "vent" in v:
                 kt, de = v["vent"]
@@ -1972,7 +2023,8 @@ class Visionneuse:
                     txt += f" · nuages {v['nuages']:.0f} %"
                 f.insert("end", txt + "\n")
             if not v:
-                f.insert("end", "Hors de la zone téléchargée.\n", "s")
+                f.insert("end", "Pas encore de météo : cliquez sur « Télécharger ».\n" if self.d.vide
+                         else "Hors de la zone téléchargée.\n", "s")
             self._fiche_maree_astres(f, la, lo)
         pe = (self.precision or {}).get("par_echeance") or {}
         s = pe.get(f"J+{int(self.d.echeances[self.k] // 24)}")
