@@ -418,7 +418,7 @@ def interface() -> None:
     id_act = centre.create_window(0, 0, window=actions)
     id_sign = centre.create_text(0, 0, text=f"Météo Marine Tunisie  ·  {version_texte()}  ·  {SIGNATURE}",
                                  font=("Segoe UI", 8, "italic"), fill="#8a90a8")
-    btn_carte = ttk.Button(actions, text="Carte A.C.I.S")
+    btn_carte = ttk.Button(actions, text="Carte marine ACIS")
     btn_carte.pack(side="left", padx=4)
     btn_ouvrir = ttk.Button(actions, text="Ouvrir dans XyGrib")
     btn_ouvrir.pack(side="left", padx=4)
@@ -717,7 +717,7 @@ def interface() -> None:
                         m = ouvrir_dans_xygrib(f, cfg)
                         log(m)
                         ouvert = ouvert or m.startswith("Ouverture dans XyGrib")
-                    if not ouvert and not trouver_xygrib(cfg) and fichiers:   # pas de XyGrib : la carte A.C.I.S
+                    if not ouvert and not trouver_xygrib(cfg) and fichiers:   # pas de XyGrib : la carte marine ACIS
                         root.after(0, lambda: ouvrir_carte(fichiers[-1]))
                     if ouvert and cfg.get("fermer", True):
                         statut("✔ Ouvert dans XyGrib — fermeture…", "green")
@@ -748,7 +748,7 @@ def interface() -> None:
     btn_ouvrir.config(command=ouvrir_dernier)
 
     def ouvrir_carte(f: str = None):
-        """Carte A.C.I.S (visionneuse intégrée) : même fichier que XyGrib, réservée aux abonnés."""
+        """Carte marine ACIS (visionneuse intégrée) : même fichier que XyGrib, réservée aux abonnés."""
         cfg = lire_ui()
         if not maj_licence(etat.get("heure")):
             fenetre_activation(); return
@@ -760,15 +760,15 @@ def interface() -> None:
             f = tous[-1] if tous else filedialog.askopenfilename(initialdir=cfg["dossier"],
                                                                   filetypes=[("GRIB", "*.grb2 *.grb *.grib2")])
         if not f:
-            messagebox.showinfo("Carte A.C.I.S", "Téléchargez d'abord la météo."); return
-        statut("Ouverture de la carte A.C.I.S…")
+            messagebox.showinfo("Carte marine ACIS", "Téléchargez d'abord la météo."); return
+        statut("Ouverture de la carte marine ACIS…")
         root.update_idletasks()
         try:
             import visionneuse                     # importée ici : un souci de la carte ne gêne jamais le reste
             visionneuse.ouvrir(f, parent=root, version=version_texte(), maintenant=etat.get("heure"))
             statut(f"✔ Carte ouverte : {os.path.basename(f)}", "green")
         except Exception as e:                     # noqa: BLE001
-            log(f"Carte A.C.I.S : {e}")
+            log(f"Carte marine ACIS : {e}")
             statut("✖ Carte indisponible : utilisez XyGrib", "red")
     btn_carte.config(command=ouvrir_carte)
 

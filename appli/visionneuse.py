@@ -1,5 +1,5 @@
 """
-Carte A.C.I.S — visionneuse météo du programme PC (Météo Marine Tunisie).
+Carte marine ACIS — visionneuse météo du programme PC (Météo Marine Tunisie).
 
 Affiche le fichier GRIB2 téléchargé, comme XyGrib, mais à la marque A.C.I.S et sans rien installer :
 Python + tkinter seulement (Windows 7 à 11, aucun navigateur nécessaire).
@@ -370,7 +370,7 @@ class Visionneuse:
             ((pc, time.time()) if pc >= self.d.run - dt.timedelta(hours=1) else (None, None))
         self.win = tk.Toplevel(parent) if parent is not None else tk.Tk()
         w = self.win
-        w.title(f"Carte A.C.I.S — Météo Marine Tunisie{titre_extra}")
+        w.title(f"Carte marine ACIS — Météo Marine Tunisie{titre_extra}")
         sl, sh = w.winfo_screenwidth(), w.winfo_screenheight()
         L, H = min(1100, sl - 40), min(720, sh - 90)
         w.geometry(f"{L}x{H}+{max(0, (sl - L) // 2)}+{max(0, (sh - 60 - H) // 2)}")
@@ -390,7 +390,7 @@ class Visionneuse:
         haut = tk.Frame(w, bg=BLEU)
         haut.pack(side="top", fill="x")
         tk.Label(haut, text="A.C.I.S MARINE", bg=BLEU, fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(8, 2))
-        tk.Label(haut, text="Carte météo", bg=BLEU, fg="#c9d2ff", font=("Segoe UI", 9)).pack(side="left", padx=(0, 10))
+        tk.Label(haut, text="Carte marine", bg=BLEU, fg="#c9d2ff", font=("Segoe UI", 9)).pack(side="left", padx=(0, 10))
         for nom, (lib, *_r) in COUCHES.items():
             if nom == "rafales" and not any("GUST" in self.d.par[e] for e in self.d.echeances[:3]):
                 continue
