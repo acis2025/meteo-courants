@@ -297,6 +297,11 @@ def interface() -> None:
     from tkinter import filedialog, messagebox, ttk
 
     c = charger_config()
+    try:                                # texte net malgré le zoom de Windows (125 %, 150 %…)
+        import visionneuse
+        visionneuse.activer_dpi()
+    except Exception:
+        pass
     root = tk.Tk()
     root.withdraw()                     # cachée : la carte est la fenêtre visible
     root.title(f"Météo Marine Tunisie — {MARQUE}")
@@ -546,7 +551,9 @@ def interface() -> None:
         ttk.Button(l3, text="…", width=3, command=choisir_dossier).pack(side="left")
 
         titre("Abonnement")
-        lbl = tk.Label(cadre, text="", bg=B, font=("Segoe UI", 10, "bold"), anchor="w", justify="left", wraplength=420)
+        zoom = max(1.0, float(cadre.winfo_fpixels("1i")) / 96.0)      # zoom de Windows (texte net)
+        lbl = tk.Label(cadre, text="", bg=B, font=("Segoe UI", 10, "bold"), anchor="w", justify="left",
+                       wraplength=int(420 * zoom))
         lbl.pack(fill="x")
         etat["lbl_abo_param"] = lbl
         l6 = ligne()

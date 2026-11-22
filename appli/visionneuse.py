@@ -73,6 +73,40 @@ MARGE_RELEVES_MIN = 40            # vents forts observés nécessaires avant d'a
 MARGE_SEUIL_KT = 12               # la marge s'affiche à partir de ce vent prévu
 
 
+# ------------------------------------------------------------------ affichage net (zoom Windows 125 %, 150 %…)
+ECH = 1.0          # facteur du zoom Windows (1.5 à 150 %) : toutes les tailles en pixels sont multipliées par lui
+
+
+def activer_dpi() -> None:
+    """À appeler AVANT de créer la 1re fenêtre Tk : le programme gère lui-même le zoom de Windows,
+    le texte est net (sinon Windows agrandit l'image de la fenêtre, qui devient floue)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)          # Windows 8.1 et plus
+        except Exception:                                           # noqa: BLE001
+            ctypes.windll.user32.SetProcessDPIAware()               # Windows 7
+    except Exception:                                               # noqa: BLE001
+        pass
+
+
+def regler_echelle(fenetre) -> float:
+    """Mesure le zoom de Windows sur une fenêtre Tk (96 points par pouce = 100 %)."""
+    global ECH
+    try:
+        ECH = max(1.0, min(3.0, float(fenetre.winfo_fpixels("1i")) / 96.0))
+    except Exception:                                               # noqa: BLE001
+        ECH = 1.0
+    return ECH
+
+
+def S(n: float) -> int:
+    """Taille en pixels adaptée au zoom de Windows."""
+    return int(round(n * ECH))
+
+
 # ------------------------------------------------------------------ outils
 def _hex(c: str) -> tuple:
     return int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
@@ -691,14 +725,14 @@ ROUGE_BOUTON = "#e70013"                                  # rouge du drapeau tun
 
 class _BoutonAncre:
     """Bouton blanc : grande ancre A.C.I.S collée au mot, l'ensemble centré dans le bouton, mot en très gras."""
-    L, H = 270, 48
+    L, H = 270, 48                                        # (multipliés par le zoom de Windows à l'ouverture)
     ECART = 6                                             # espace entre l'ancre et le mot
 
     def __init__(self, parent, image, texte: str, commande):
         import tkinter as tk
         self.commande = commande
         # cadre de taille fixe ; dedans, ancre + mot côte à côte, l'ensemble centré (Tk mesure lui-même)
-        self.cadre = tk.Frame(parent, width=self.L, height=self.H, bg="#ffffff", cursor="hand2")
+        self.cadre = tk.Frame(parent, width=S(self.L), height=S(self.H), bg="#ffffff", cursor="hand2")
         self.cadre.pack_propagate(False)
         self.groupe = tk.Frame(self.cadre, bg="#ffffff")
         self.groupe.place(relx=0.5, rely=0.5, anchor="center")
@@ -707,7 +741,7 @@ class _BoutonAncre:
         else:
             self.lbl_img = tk.Label(self.groupe, text="⚓", fg=BLEU, bg="#ffffff", bd=0,
                                     font=("Segoe UI Symbol", 22, "bold"))
-        self.lbl_img.pack(side="left", padx=(0, self.ECART))
+        self.lbl_img.pack(side="left", padx=(0, S(self.ECART)))
         self.lbl_txt = tk.Label(self.groupe, text=texte, fg=ROUGE_BOUTON, bg="#ffffff", bd=0,
                                 font=("Segoe UI Black", 17))      # plus gras que « bold »
         self.lbl_txt.pack(side="left")
@@ -758,13 +792,21 @@ class Visionneuse:
         self.heure_net = (maintenant if maintenant.tzinfo else maintenant.replace(tzinfo=dt.timezone.utc)) \
             if maintenant else None
         self.heure_net_mono = time.monotonic()
+        if parent is None:
+            activer_dpi()                          # carte lancée seule : texte net
         self.win = tk.Toplevel(parent) if parent is not None else tk.Tk()
         w = self.win
+        regler_echelle(w)
         w.title(f"ACIS MétéoNav — Météo Marine Tunisie{titre_extra}")
         sl, sh = w.winfo_screenwidth(), w.winfo_screenheight()
-        L, H = min(1100, sl - 40), min(720, sh - 90)
-        w.geometry(f"{L}x{H}+{max(0, (sl - L) // 2)}+{max(0, (sh - 60 - H) // 2)}")
-        w.minsize(640, 460)
+        L, H = min(S(1100), sl - S(40)), min(S(720), sh - S(90))
+        w.geometry(f"{L}x{H}+{max(0, (sl - L) // 2)}+{max(0, (sh - S(60) - H) // 2)}")
+        w.minsize(S(640), S(460))
+        if hote:                                   # fenêtre du programme : plein écran dès l'ouverture
+            try:
+                w.state("zoomed")
+            except Exception:                      # noqa: BLE001
+                pass
         self.couche = tk.StringVar(value="vent")
         reg = lire_reglages()
         self.chiffres = tk.BooleanVar(value=reg.get("valeurs", True))
@@ -788,7 +830,7 @@ class Visionneuse:
         # lune (phase à l'heure affichée) ; au survol, sa fiche s'affiche dans le panneau de droite
         self.lune_survol = False
         self._lune_cache = {}
-        self.cv_lune = tk.Canvas(haut, width=34, height=34, bg=BLEU, highlightthickness=0, cursor="hand2")
+        self.cv_lune = tk.Canvas(haut, width=S(34), height=S(34), bg=BLEU, highlightthickness=0, cursor="hand2")
         self.cv_lune.pack(side="left", padx=(8, 0), pady=2)
         self.cv_lune.bind("<Enter>", lambda e: self._survol_lune(True))
         self.cv_lune.bind("<Leave>", lambda e: self._survol_lune(False))
@@ -798,9 +840,9 @@ class Visionneuse:
         self._boutons_couches()
         self.cb_marge = None                       # « Valeurs » et « Marge de sécurité » : dans Paramètres (drapeau)
         self.texte_marge = "Marge de sécurité sur les vents forts"
-        drapeau = tk.Canvas(haut, width=50, height=34, bg=BLEU, highlightthickness=0, cursor="hand2")
+        drapeau = tk.Canvas(haut, width=S(50), height=S(34), bg=BLEU, highlightthickness=0, cursor="hand2")
         drapeau.pack(side="right", padx=(12, 10), pady=2)            # isolé, en haut à droite
-        dessiner_drapeau_tunisie(drapeau, 1, 1, 48, 32)
+        dessiner_drapeau_tunisie(drapeau, S(1), S(1), S(48), S(32))
         drapeau.bind("<Button-1>", lambda e: self.ouvrir_parametres())   # le drapeau ouvre les paramètres
         self.zone = ttk.Combobox(haut, values=[z[0] for z in ZONES], state="readonly", width=22 if hote else 26)
         self.zone.set(ZONES[0][0])
@@ -808,7 +850,7 @@ class Visionneuse:
         self.zone.bind("<<ComboboxSelected>>", self._zone)
         self.lbl_abo = self.btn_dl = None
         if self.hote:                              # programme : bouton Télécharger (toujours là), ancre A.C.I.S
-            self._ancre = self._icone_ancre("#ffffff", BLEU, 46, angle=25)    # grande ancre inclinée
+            self._ancre = self._icone_ancre("#ffffff", BLEU, S(46), angle=25)    # grande ancre inclinée
             self.btn_dl = _BoutonAncre(haut, self._ancre, "Télécharger", lambda: self.hote["telecharger"]())
             self.btn_dl.pack(side="right", padx=(4, 8), pady=3)
 
@@ -820,9 +862,9 @@ class Visionneuse:
         self.lbl_date.pack(side="left", padx=8)
         self.curseur = tk.Scale(ligne, from_=0, to=max(0, len(self.d.echeances) - 1), orient="horizontal",
                                 showvalue=False, command=lambda v: self.aller(int(float(v)), depuis_curseur=True),
-                                bg="#eef0f6", highlightthickness=0, troughcolor="#c9cfe3", sliderlength=18)
+                                bg="#eef0f6", highlightthickness=0, troughcolor="#c9cfe3", sliderlength=S(18))
         self.curseur.pack(side="left", fill="x", expand=True)
-        self.legende = tk.Canvas(bas, height=30, bg="#eef0f6", highlightthickness=0)
+        self.legende = tk.Canvas(bas, height=S(30), bg="#eef0f6", highlightthickness=0)
         self.legende.pack(fill="x", padx=6)
         pied = tk.Frame(bas, bg=BLEU)
         pied.pack(fill="x")
@@ -833,11 +875,11 @@ class Visionneuse:
         # téléchargement en cours (programme) : texte + barre de progression
         self.lbl_statut = tk.Label(pied, text="", bg=BLEU, fg="#ffd166", font=("Segoe UI", 9, "bold"))
         self.lbl_statut.pack(side="left", padx=8)
-        self.barre = ttk.Progressbar(pied, mode="determinate", length=160)
+        self.barre = ttk.Progressbar(pied, mode="determinate", length=S(160))
 
         centre = tk.Frame(w)
         centre.pack(fill="both", expand=True)
-        droite = tk.Frame(centre, bg="#f7f8fc", width=270)
+        droite = tk.Frame(centre, bg="#f7f8fc", width=S(270))
         droite.pack(side="right", fill="y")
         droite.pack_propagate(False)
         # bas du panneau : A.C.I.S (toujours en bas)
@@ -845,7 +887,7 @@ class Visionneuse:
                  bg=BLEU, fg="white", font=("Segoe UI", 9, "bold"), justify="center",
                  pady=5).pack(side="bottom", fill="x")
         tk.Label(droite, text="NOAA GFS · GFS-Wave · Copernicus Marine",
-                 bg="#f7f8fc", fg="#6b7290", font=("Segoe UI", 7), wraplength=255,
+                 bg="#f7f8fc", fg="#6b7290", font=("Segoe UI", 7), wraplength=S(255),
                  justify="center").pack(side="bottom", fill="x", pady=(2, 3))
         cmd = tk.Frame(droite, bg="#f7f8fc")
         cmd.pack(side="bottom", fill="x", padx=8, pady=4)
@@ -945,7 +987,7 @@ class Visionneuse:
                 continue
             tk.Radiobutton(self.cadre_couches, text=lib, value=nom, variable=self.couche, indicatoron=False,
                            command=self.dessiner, bg="#2c3a85", fg="white", selectcolor="#f6b400",
-                           activebackground="#3b4aa0", font=("Segoe UI", 9, "bold"), padx=8, pady=2, relief="flat",
+                           activebackground="#3b4aa0", font=("Segoe UI", 11, "bold"), padx=10, pady=3, relief="flat",
                            offrelief="flat").pack(side="left", padx=1, pady=4)
 
     # ---------------- liens avec le programme principal (hote)
@@ -1075,7 +1117,7 @@ class Visionneuse:
         tk.Label(corps, text="Vitesse de l'animation (une image toutes les … ms) :", **opt).pack(fill="x", pady=(10, 0))
         tk.Scale(corps, from_=200, to=2000, resolution=100, orient="horizontal", variable=self.vitesse,
                  command=lambda _v: self._reglage_change(redessiner=False), bg="#f7f8fc", highlightthickness=0,
-                 length=300).pack(fill="x")
+                 length=S(300)).pack(fill="x")
         tk.Label(corps, text=f"Fichier : {os.path.basename(self.d.chemin)}", bg="#f7f8fc", fg="#6b7290",
                  font=("Segoe UI", 8), anchor="w").pack(fill="x", pady=(10, 0))
         tk.Button(f, text="✔ Fermer", command=f.destroy, font=("Segoe UI", 11, "bold"), bg=BLEU, fg="white",
@@ -1273,7 +1315,7 @@ class Visionneuse:
     def _image(self, couche: str):
         """Image des couleurs (1 pixel calculé tous les PAS pixels, puis agrandie)."""
         tk = self.tk
-        PAS = 4
+        PAS = max(4, S(4))
         g = self.d.grille(couche, self.k)
         if g is None:
             return None
@@ -1369,7 +1411,7 @@ class Visionneuse:
             x, y = self.xy(*self.repere)
             for lw, c in ((5, "#000000"), (2, "#ffffff")):
                 for a, b in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-                    cv.create_line(x + a * 5, y + b * 5, x + a * 13, y + b * 13, width=lw, fill=c)
+                    cv.create_line(x + a * S(5), y + b * S(5), x + a * S(13), y + b * S(13), width=lw * ECH, fill=c)
         self._dessiner_lune()
         self._entete(couche)
         self._legende(couche)
@@ -1595,7 +1637,7 @@ class Visionneuse:
             for _une_fois in (1,):
                 try:
                     src = self.tk.PhotoImage(data=valeur) if genre == "data" else self.tk.PhotoImage(file=valeur)
-                    if src.width() >= 256:                   # 256 -> 192 px
+                    if src.width() >= 256 and ECH < 1.3:     # 256 -> 192 px (à 150 % : 256 px tel quel)
                         src = src.zoom(3).subsample(4)
                     w, h = src.width(), src.height()
                     out = self.tk.PhotoImage(width=w, height=h)
@@ -1638,7 +1680,7 @@ class Visionneuse:
             self._fil_zone = (x, y, r)               # pas de symboles météo sur le logo (c'est la terre)
             return
         # pas de fichier logo : sigle écrit
-        R = 82
+        R = S(82)
         cv.create_oval(x - R, y - R, x + R, y + R, outline="#4c5276", width=5)
         cv.create_oval(x - R + 9, y - R + 9, x + R - 9, y + R - 9, outline="#464b6e", width=2)
         cv.create_text(x, y - 10, text="A.C.I.S", fill="#555b80", font=("Segoe UI", 32, "bold"))
@@ -1650,8 +1692,8 @@ class Visionneuse:
         cv = self.cv_lune
         cv.delete("all")
         frac, ph = phase_lune(self.d.date(self.k).timestamp())
-        R = 14
-        cx, cy = 17, 17
+        R = S(14)
+        cx, cy = S(17), S(17)
         cv.create_oval(cx - R, cy - R, cx + R, cy + R, fill="#2b3150", outline="#6b74a3")   # partie sombre
         s = 1 if ph < 0.5 else -1                   # croissante : éclairée à droite (vue de Tunisie)
         k = 1 - 2 * frac                            # bord de l'ombre : 1 = nouvelle, 0 = quartier, -1 = pleine
@@ -1734,12 +1776,12 @@ class Visionneuse:
         cv = self.cv
         a = math.radians(de)
         ux, uy = math.sin(a), -math.cos(a)
-        L, B, E = 24, 10, 4.2
+        L, B, E = 24 * ECH, 10 * ECH, 4.2 * ECH
         px, py = -uy, ux
         fx, fy = math.cos(math.pi / 6), math.sin(math.pi / 6)
         bx, by = px * fx + ux * fy, py * fx + uy * fy
         if kt < 2.5:
-            cv.create_oval(x - 4, y - 4, x + 4, y + 4, outline="#121a45", width=1.6)
+            cv.create_oval(x - S(4), y - S(4), x + S(4), y + S(4), outline="#121a45", width=1.6 * ECH)
             return
         traits, tri = [(x, y, x + ux * L, y + uy * L)], []
         reste, d = int(round(kt / 5) * 5), 0.0
@@ -1764,24 +1806,24 @@ class Visionneuse:
             traits.append((ax, ay, ax + bx * B / 2, ay + by * B / 2))
         for lw, c in ((3.6, "#ffffff"), (1.6, "#121a45")):
             for t in traits:
-                cv.create_line(*t, width=lw, fill=c, capstyle="round")
+                cv.create_line(*t, width=lw * ECH, fill=c, capstyle="round")
         for t in tri:
             cv.create_polygon(*t, fill="#121a45", outline="#ffffff")
-        cv.create_oval(x - 1.6, y - 1.6, x + 1.6, y + 1.6, fill="#121a45", outline="")
+        cv.create_oval(x - 1.6 * ECH, y - 1.6 * ECH, x + 1.6 * ECH, y + 1.6 * ECH, fill="#121a45", outline="")
 
     def _fleche(self, x, y, vers, taille):
         a = math.radians(vers)
         dx, dy = math.sin(a), -math.cos(a)
         x1, y1, x2, y2 = x - dx * taille / 2, y - dy * taille / 2, x + dx * taille / 2, y + dy * taille / 2
-        for lw, c in ((3.4, "#ffffff"), (1.6, "#121a45")):
+        for lw, c in ((3.4 * ECH, "#ffffff"), (1.6 * ECH, "#121a45")):
             self.cv.create_line(x1, y1, x2, y2, width=lw, fill=c, capstyle="round")
-            self.cv.create_line(x2 - 6 * math.sin(a - .5), y2 + 6 * math.cos(a - .5), x2, y2,
-                                x2 - 6 * math.sin(a + .5), y2 + 6 * math.cos(a + .5), width=lw, fill=c,
+            self.cv.create_line(x2 - S(6) * math.sin(a - .5), y2 + S(6) * math.cos(a - .5), x2, y2,
+                                x2 - S(6) * math.sin(a + .5), y2 + S(6) * math.cos(a + .5), width=lw, fill=c,
                                 capstyle="round", joinstyle="round")
 
     def _symboles(self, couche):
         p = self._ppd()
-        pas_deg = next((v for v in (1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2) if v * p >= 58), 2)
+        pas_deg = next((v for v in (1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2) if v * p >= S(58)), 2)
         cos = math.cos(math.radians(35.6))
         pas_la = pas_deg * cos
         la_h, lo_g = self.geo(-20, -20)
@@ -1793,7 +1835,7 @@ class Visionneuse:
             while lo <= lo_d:
                 x, y = self.xy(la, lo)
                 lo += pas_deg
-                if x < 16 or x > self.W - 12 or y < 14 or y > self.H - 8:
+                if x < S(16) or x > self.W - S(12) or y < S(14) or y > self.H - S(8):
                     continue
                 lo_pt = lo - pas_deg
                 fz = getattr(self, "_fil_zone", None)
@@ -1814,7 +1856,7 @@ class Visionneuse:
                         a = math.radians(de)
                         m = self.marge(self.k, kt)
                         txt = f"{kt:.0f}" + (f" (+{m})" if m else "")
-                        self._etiquette(x - math.sin(a) * 12, y + math.cos(a) * 12, txt,
+                        self._etiquette(x - math.sin(a) * S(12), y + math.cos(a) * S(12), txt,
                                         "#ffd166" if m else "#ffffff")
                 elif couche in ("courant", "maree"):          # marée : flèches du courant par-dessus
                     if not self.d.est_mer(la, lo_pt):
@@ -1822,10 +1864,10 @@ class Visionneuse:
                     c = self.d.courant(self.k, la, lo_pt)
                     if not c or c[0] < 0.05:
                         continue
-                    self._fleche(x, y, c[1], 12 + min(c[0], 2.5) * 9)
+                    self._fleche(x, y, c[1], S(12 + min(c[0], 2.5) * 9))
                     if chiffres:
                         a = math.radians(c[1])
-                        self._etiquette(x + math.cos(a) * 16, y + math.sin(a) * 16, f"{c[0]:.1f}")
+                        self._etiquette(x + math.cos(a) * S(16), y + math.sin(a) * S(16), f"{c[0]:.1f}")
                 else:
                     if not self.d.est_mer(la, lo_pt):
                         continue
@@ -1834,10 +1876,10 @@ class Visionneuse:
                     d = self.d.direction_vagues(self.k, la, lo_pt)
                     if h is None or d is None:
                         continue
-                    self._fleche(x, y, (d + 180) % 360, 14 + min(h, 4) * 4)
+                    self._fleche(x, y, (d + 180) % 360, S(14 + min(h, 4) * 4))
                     if chiffres:
                         a = math.radians(d)
-                        self._etiquette(x + math.cos(a) * 16, y + math.sin(a) * 16, f"{h:.1f}")
+                        self._etiquette(x + math.cos(a) * S(16), y + math.sin(a) * S(16), f"{h:.1f}")
             la += pas_la
 
     def _villes(self):
@@ -1846,14 +1888,14 @@ class Visionneuse:
             x, y = self.xy(la, lo)
             if x < 0 or y < 0 or x > self.W or y > self.H:
                 continue
-            b = (x - 4 * len(nom) - 4, y - 22, x + 4 * len(nom) + 4, y + 4)
+            b = (x - S(4 * len(nom) + 4), y - S(22), x + S(4 * len(nom) + 4), y + S(4))
             if any(b[0] < d and b[2] > a and b[1] < f and b[3] > c for a, c, d, f in zones):
                 continue
             zones.append(b)
-            self.cv.create_oval(x - 3.5, y - 3.5, x + 3.5, y + 3.5, fill="#ffffff", outline="#000000")
+            self.cv.create_oval(x - S(3.5), y - S(3.5), x + S(3.5), y + S(3.5), fill="#ffffff", outline="#000000")
             for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                self.cv.create_text(x + dx, y - 12 + dy, text=nom, fill="#000000", font=("Segoe UI", 10, "bold"))
-            self.cv.create_text(x, y - 12, text=nom, fill="#ffffff", font=("Segoe UI", 10, "bold"))
+                self.cv.create_text(x + dx, y - S(12) + dy, text=nom, fill="#000000", font=("Segoe UI", 10, "bold"))
+            self.cv.create_text(x, y - S(12), text=nom, fill="#ffffff", font=("Segoe UI", 10, "bold"))
 
     def _entete(self, couche):
         if self.d.vide:
@@ -1888,20 +1930,21 @@ class Visionneuse:
         lg.delete("all")
         lib, ech, unite, grad, reg = COUCHES[couche]
         table, indice = palette(ech, reg)
-        larg = max(200, lg.winfo_width() - 120)
-        x0 = 60
-        lg.create_text(x0 - 6, 10, text=lib, anchor="e", font=("Segoe UI", 9, "bold"), fill=BLEU)
+        larg = max(S(200), lg.winfo_width() - S(120))
+        x0 = S(60)
+        lg.create_text(x0 - S(6), S(10), text=lib, anchor="e", font=("Segoe UI", 9, "bold"), fill=BLEU)
         n = 128
         for q in range(n):
-            lg.create_rectangle(x0 + q * larg / n, 2, x0 + (q + 1) * larg / n + 1, 14, fill=table[q * 2], outline="")
+            lg.create_rectangle(x0 + q * larg / n, S(2), x0 + (q + 1) * larg / n + 1, S(14), fill=table[q * 2],
+                                outline="")
         vmax = grad[-1]
         for v in grad:
             if reg:
                 pos = indice(v) / 255
             else:
                 pos = v / vmax
-            lg.create_text(x0 + pos * larg, 22, text=f"{v:g}", font=("Segoe UI", 8), fill="#333")
-        lg.create_text(x0 + larg + 8, 10, text=unite, anchor="w", font=("Segoe UI", 9), fill="#333")
+            lg.create_text(x0 + pos * larg, S(22), text=f"{v:g}", font=("Segoe UI", 8), fill="#333")
+        lg.create_text(x0 + larg + S(8), S(10), text=unite, anchor="w", font=("Segoe UI", 9), fill="#333")
 
     def _fiche_maree_astres(self, f, la: float, lo: float) -> None:
         """Marée (hauteur, PM/BM du jour, courbe) puis soleil et lune du jour — comme la carte téléphone."""
