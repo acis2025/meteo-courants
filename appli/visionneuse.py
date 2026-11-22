@@ -789,7 +789,7 @@ class Visionneuse:
 
     def _symboles(self, couche):
         p = self._ppd()
-        pas_deg = next((v for v in (1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2) if v * p >= 46), 2)
+        pas_deg = next((v for v in (1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2) if v * p >= 58), 2)
         cos = math.cos(math.radians(35.6))
         pas_la = pas_deg * cos
         la_h, lo_g = self.geo(-20, -20)
