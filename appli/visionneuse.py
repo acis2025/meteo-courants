@@ -41,6 +41,8 @@ ECH_COURANT = [(0, "#24306e"), (0.25, "#3f56d8"), (0.5, "#2fa4c8"), (0.75, "#2fb
 ECH_PLUIE = [(0, "#1a2046"), (0.1, "#9be7ff"), (0.5, "#4fb6ff"), (1, "#2f6bff"), (2, "#2fb35a"), (5, "#f6d200"),
              (10, "#f15a1d"), (20, "#d1132b"), (50, "#8b00a8")]
 ECH_NUAGES = [(0, "#1a2046"), (25, "#47506f"), (50, "#7d849c"), (75, "#b6bac8"), (100, "#eceef3")]
+ECH_MAREE = [(-1, "#1d2f8f"), (-0.5, "#2f6bd8"), (-0.2, "#8fc2f0"), (0, "#eef1f6"), (0.2, "#f7c49e"),
+             (0.5, "#e8643a"), (1, "#a3122b")]
 
 COUCHES = {   # nom : (libellé, échelle, unité, graduations de la légende, échelle « régulière » ?)
     "vent": ("Vent", ECH_VENT, "nds", [0, 5, 10, 15, 20, 25, 30, 35, 40, 50], False),
@@ -49,6 +51,7 @@ COUCHES = {   # nom : (libellé, échelle, unité, graduations de la légende, �
     "courant": ("Courant", ECH_COURANT, "nds", [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3], False),
     "pluie": ("Pluie", ECH_PLUIE, "mm/h", [0, 0.1, 0.5, 1, 2, 5, 10, 20, 50], True),
     "nuages": ("Nuages", ECH_NUAGES, "%", [0, 25, 50, 75, 100], False),
+    "maree": ("Marée", ECH_MAREE, "m", [-1, -0.5, -0.2, 0, 0.2, 0.5, 1], True),
 }
 
 VILLES = [("Tunis", 36.806, 10.181), ("Sfax", 34.740, 10.760), ("Sousse", 35.826, 10.636), ("Kélibia", 36.847, 11.093),
@@ -115,6 +118,159 @@ def dm(v: float, pos: str, neg: str) -> str:
 def cardinal(deg: float) -> str:
     noms = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
     return noms[int((deg % 360) / 22.5 + 0.5) % 16]
+
+
+# ------------------------------------------------------------------ soleil et lune (mêmes formules que la carte téléphone)
+RAD = math.pi / 180
+J2000 = 2451545
+OBL = 23.4397 * RAD
+
+
+def jours2000(t: float) -> float:
+    """t : secondes UTC depuis 1970 -> jours depuis J2000."""
+    return t / 86400 - 0.5 + 2440588 - J2000
+
+
+def _ecl_eq(l, b):
+    return {"ra": math.atan2(math.sin(l) * math.cos(OBL) - math.tan(b) * math.sin(OBL), math.cos(l)),
+            "dec": math.asin(math.sin(b) * math.cos(OBL) + math.cos(b) * math.sin(OBL) * math.sin(l))}
+
+
+def soleil_pos(d: float) -> dict:
+    M = RAD * (357.5291 + 0.98560028 * d)
+    C = RAD * (1.9148 * math.sin(M) + 0.02 * math.sin(2 * M) + 0.0003 * math.sin(3 * M))
+    return _ecl_eq(M + C + RAD * 102.9372 + math.pi, 0)
+
+
+def lune_pos(d: float) -> dict:
+    """Position de la Lune (éléments + 12 termes de perturbation, ~2')."""
+    n = d + 1.5
+
+    def deg(x):
+        return (x % 360) * RAD
+    N, i, w = deg(125.1228 - 0.0529538083 * n), 5.1454 * RAD, deg(318.0634 + 0.1643573223 * n)
+    M, e, a = deg(115.3654 + 13.0649929509 * n), 0.0549, 60.2666
+    Ms, ws = deg(356.047 + 0.9856002585 * n), deg(282.9404 + 4.70935e-5 * n)
+    E = M + e * math.sin(M) * (1 + e * math.cos(M))
+    for _ in range(5):
+        E = E - (E - e * math.sin(E) - M) / (1 - e * math.cos(E))
+    x, y = a * (math.cos(E) - e), a * math.sqrt(1 - e * e) * math.sin(E)
+    r, v = math.hypot(x, y), math.atan2(y, x)
+    xe = r * (math.cos(N) * math.cos(v + w) - math.sin(N) * math.sin(v + w) * math.cos(i))
+    ye = r * (math.sin(N) * math.cos(v + w) + math.cos(N) * math.sin(v + w) * math.cos(i))
+    ze = r * math.sin(v + w) * math.sin(i)
+    lon, lat = math.atan2(ye, xe), math.atan2(ze, math.hypot(xe, ye))
+    Ls, Lm = Ms + ws, M + w + N
+    D, F, S = Lm - Ls, Lm - N, math.sin
+    lon += RAD * (-1.274 * S(M - 2 * D) + 0.658 * S(2 * D) - 0.186 * S(Ms) - 0.059 * S(2 * M - 2 * D)
+                  - 0.057 * S(M - 2 * D + Ms) + 0.053 * S(M + 2 * D) + 0.046 * S(2 * D - Ms) + 0.041 * S(M - Ms)
+                  - 0.035 * S(D) - 0.031 * S(M + Ms) - 0.015 * S(2 * F - 2 * D) + 0.011 * S(M - 4 * D))
+    lat += RAD * (-0.173 * S(F - 2 * D) - 0.055 * S(M - F - 2 * D) - 0.046 * S(M + F - 2 * D)
+                  + 0.033 * S(F + 2 * D) + 0.017 * S(2 * M + F))
+    p = _ecl_eq(lon, lat)
+    p["dist"] = (r - 0.58 * math.cos(M - 2 * D) - 0.46 * math.cos(2 * D)) * 6378.14
+    return p
+
+
+def _hauteur_astre(p, d, la, lo):
+    H = RAD * (280.16 + 360.9856235 * d) + RAD * lo - p["ra"]
+    f = RAD * la
+    return math.asin(math.sin(f) * math.sin(p["dec"]) + math.cos(f) * math.cos(p["dec"]) * math.cos(H))
+
+
+def lever_coucher(pos, seuil_deg, t0: float, la: float, lo: float) -> tuple:
+    """Lever / coucher pendant [t0, t0 + 24 h] (secondes UTC) : pas de 10 min puis interpolation."""
+    lev = cou = prec = None
+    for m in range(0, 1441, 10):
+        t = t0 + m * 60
+        d = jours2000(t)
+        q = pos(d)
+        seuil = (0.7275 * math.asin(6378.14 / q["dist"]) - 0.5667 * RAD) if seuil_deg is None else seuil_deg * RAD
+        h = _hauteur_astre(q, d, la, lo) - seuil
+        if prec is not None and (prec[1] < 0) != (h < 0):
+            tc = prec[0] + (t - prec[0]) * prec[1] / (prec[1] - h)
+            if h > 0 and lev is None:
+                lev = tc
+            elif h < 0 and cou is None:
+                cou = tc
+        prec = (t, h)
+    return lev, cou
+
+
+def phase_lune(t: float) -> tuple:
+    """(fraction éclairée, phase 0..1 : 0 = nouvelle, 0,5 = pleine)."""
+    d = jours2000(t)
+    s, m, sd = soleil_pos(d), lune_pos(d), 149598000
+    phi = math.acos(max(-1.0, min(1.0, math.sin(s["dec"]) * math.sin(m["dec"])
+                                  + math.cos(s["dec"]) * math.cos(m["dec"]) * math.cos(s["ra"] - m["ra"]))))
+    inc = math.atan2(sd * math.sin(phi), m["dist"] - sd * math.cos(phi))
+    ang = math.atan2(math.cos(s["dec"]) * math.sin(s["ra"] - m["ra"]),
+                     math.sin(s["dec"]) * math.cos(m["dec"]) - math.cos(s["dec"]) * math.sin(m["dec"]) * math.cos(s["ra"] - m["ra"]))
+    return (1 + math.cos(inc)) / 2, 0.5 + 0.5 * inc * (-1 if ang < 0 else 1) / math.pi
+
+
+def nom_lune(frac: float, phase: float) -> str:
+    monte = phase < 0.5
+    if frac < 0.03:
+        return "nouvelle lune"
+    if frac > 0.97:
+        return "pleine lune"
+    if abs(frac - 0.5) < 0.06:
+        return "premier quartier" if monte else "dernier quartier"
+    if frac < 0.5:
+        return "lune croissante" if monte else "dernier croissant"
+    return "gibbeuse croissante" if monte else "gibbeuse décroissante"
+
+
+def type_maree(phase: float) -> tuple:
+    """Vive-eau ~1,5 jour après la nouvelle et la pleine lune ; morte-eau après les quartiers."""
+    x = ((phase * 29.53 - 1.5) % 14.765) / 14.765
+    if x < 0.135 or x > 0.865:
+        return "vive-eau", "grande marée"
+    if abs(x - 0.5) < 0.135:
+        return "morte-eau", "petite marée"
+    return ("marée moyenne", "vers la morte-eau") if x < 0.5 else ("marée moyenne", "vers la vive-eau")
+
+
+def extremes(serie: list, a: float, b: float) -> list:
+    """Pleines (haut=True) et basses mers d'une série horaire, entre les heures a et b : [(t, v, haut)]."""
+    n = len(serie)
+
+    def lisse(i):
+        return (serie[max(0, i - 1)] + serie[i] + serie[min(n - 1, i + 1)]) / 3
+    out = []
+    for i in range(max(1, math.floor(a) - 1), min(n - 2, math.ceil(b) + 1) + 1):
+        p, c, s = lisse(i - 1), lisse(i), lisse(i + 1)
+        if math.isnan(p + c + s):
+            continue
+        haut, bas = c >= p and c > s, c <= p and c < s
+        if not haut and not bas:
+            continue
+        y0, y1, y2 = serie[i - 1], serie[i], serie[i + 1]
+        den = y0 - 2 * y1 + y2
+        dx = max(-0.5, min(0.5, 0.5 * (y0 - y2) / den)) if den else 0
+        v, t = y1 - 0.25 * (y0 - y2) * dx, i + dx
+        if out:
+            dt_, dv_, dh_ = out[-1]
+            if dh_ == haut:
+                if (v > dv_) if haut else (v < dv_):
+                    out[-1] = (t, v, haut)
+                continue
+            if abs(v - dv_) < 0.03 or t - dt_ < 3:          # petite oscillation : ignorée
+                continue
+        out.append((t, v, haut))
+    return [e for e in out if a <= e[0] < b]
+
+
+def hm(t) -> str:
+    """Secondes UTC -> « HH:MM » heure de Tunisie (— si inconnu)."""
+    if t is None:
+        return "—"
+    return (dt.datetime.fromtimestamp(t, dt.timezone.utc) + TUNISIE).strftime("%H:%M")
+
+
+def signe(v: float) -> str:
+    return ("+" if v >= 0 else "−") + f"{abs(v):.2f}"
 
 
 def lire_cotes() -> tuple:
@@ -229,6 +385,90 @@ class Donnees:
             if h is not None:
                 self.mer = Grille(h, [None if x is None else 1 for x in h.valeurs])
                 break
+        self._charger_maree([c for c in champs if c.code == "DSLM"])
+
+    # ---------------- marée (hauteur d'eau Copernicus, une grille par heure)
+    def _charger_maree(self, champs_maree: list) -> None:
+        """Marée du fichier, sinon du fichier marée rangé à côté (Maree_….grb2 ou marees_tunisie.grb2)."""
+        self.maree, self.maree_t0, self.maree_fichier = [], None, None
+        if not champs_maree:
+            ici = os.path.dirname(os.path.abspath(self.chemin))
+            try:
+                noms = os.listdir(ici)
+            except OSError:
+                noms = []
+            cands = sorted((n for n in noms if n.lower().startswith("maree_") and n.lower().endswith(".grb2")),
+                           key=lambda n: os.path.getmtime(os.path.join(ici, n)), reverse=True)
+            cands += [n for n in noms if n.lower() == "marees_tunisie.grb2"]
+            for n in cands:
+                try:
+                    champs_maree = [c for c in grib2.lire_fichier(os.path.join(ici, n)) if c.code == "DSLM"]
+                except Exception:                  # noqa: BLE001
+                    champs_maree = []
+                if champs_maree:
+                    self.maree_fichier = n
+                    break
+        if not champs_maree:
+            return
+
+        def utc(c):
+            return c.date_prevue.replace(tzinfo=dt.timezone.utc) if c.date_prevue.tzinfo is None else c.date_prevue
+        par_date = {utc(c): c for c in champs_maree}
+        self.maree_t0 = min(par_date)
+        n = int((max(par_date) - self.maree_t0).total_seconds() // 3600) + 1
+        self.maree = [par_date.get(self.maree_t0 + dt.timedelta(hours=h)) for h in range(n)]
+
+    def heure_maree(self, t: dt.datetime) -> float:
+        return (t - self.maree_t0).total_seconds() / 3600 if self.maree else -1
+
+    def _maree_brut(self, i: int, j: int, h: int):
+        c = self.maree[h]
+        return None if c is None else c.valeurs[j * c.ni + i]
+
+    def maree_a(self, la: float, lo: float, h: float):
+        """Hauteur d'eau (m) au point à l'heure fractionnaire h ; None sur terre / hors période."""
+        if not self.maree or h < 0 or h > len(self.maree) - 1:
+            return None
+        g = next((c for c in self.maree if c is not None), None)
+        x, y = (lo - g.lon1) / g.dlon, (la - g.lat1) / g.dlat
+        i0, j0 = math.floor(x), math.floor(y)
+        if i0 < 0 or j0 < 0 or i0 >= g.ni or j0 >= g.nj:
+            return None
+        i1, j1, fx, fy = min(i0 + 1, g.ni - 1), min(j0 + 1, g.nj - 1), x - i0, y - j0
+        h0 = math.floor(h)
+        h1, ft = min(h0 + 1, len(self.maree) - 1), h - h0
+        s = p = 0.0
+        for i, j, w in ((i0, j0, (1 - fx) * (1 - fy)), (i1, j0, fx * (1 - fy)), (i0, j1, (1 - fx) * fy), (i1, j1, fx * fy)):
+            a, b = self._maree_brut(i, j, h0), self._maree_brut(i, j, h1)
+            if a is not None and b is not None:
+                s += (a + (b - a) * ft) * w
+                p += w
+        return None if p < 0.5 else s / p
+
+    def serie_maree(self, la: float, lo: float):
+        """Série horaire au point (au bord de la côte : point de mer le plus proche, jusqu'à ~3 mailles)."""
+        if not self.maree:
+            return None
+        n = len(self.maree)
+        if self.maree_a(la, lo, 0) is not None:
+            return [self.maree_a(la, lo, h) for h in range(n)]
+        g = next(c for c in self.maree if c is not None)
+        x, y = (lo - g.lon1) / g.dlon, (la - g.lat1) / g.dlat
+        best, db = None, 1e9
+        for j in range(round(y) - 3, round(y) + 4):
+            for i in range(round(x) - 3, round(x) + 4):
+                if i < 0 or j < 0 or i >= g.ni or j >= g.nj or self._maree_brut(i, j, 0) is None:
+                    continue
+                d = (i - x) ** 2 + (j - y) ** 2
+                if d < db:
+                    db, best = d, (i, j)
+        if not best:
+            return None
+        out = []
+        for h in range(n):
+            v = self._maree_brut(best[0], best[1], h)
+            out.append(float("nan") if v is None else v)
+        return out
 
     def date(self, k: int) -> dt.datetime:
         return self.run + dt.timedelta(hours=self.echeances[k])
@@ -264,6 +504,15 @@ class Donnees:
             g = Grille(ch["PRATE"], [None if a is None else a * 3600 for a in ch["PRATE"].valeurs])
         elif couche == "nuages" and "TCDC" in ch:
             g = Grille(ch["TCDC"], ch["TCDC"].valeurs)
+        elif couche == "maree" and self.maree:
+            h = self.heure_maree(self.date(k))
+            if 0 <= h <= len(self.maree) - 1:
+                h0 = math.floor(h)
+                h1, ft = min(h0 + 1, len(self.maree) - 1), h - h0
+                a, b = self.maree[h0], self.maree[h1]
+                if a is not None and b is not None:
+                    g = Grille(a, [None if x is None or y is None else x + (y - x) * ft
+                                   for x, y in zip(a.valeurs, b.valeurs)])
         elif couche == "courant":
             c = self._courant(k)
             if c:
@@ -334,6 +583,24 @@ def dossier_app() -> str:
         return os.path.join(os.path.expanduser("~"), ".meteomarinetn")
 
 
+def lire_reglages() -> dict:
+    """Réglages de la carte (fenêtre Paramètres), gardés d'une ouverture à l'autre."""
+    try:
+        d = json.load(open(os.path.join(dossier_app(), "carte_reglages.json"), encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:                               # noqa: BLE001
+        return {}
+
+
+def ecrire_reglages(d: dict) -> None:
+    try:
+        os.makedirs(dossier_app(), exist_ok=True)
+        with open(os.path.join(dossier_app(), "carte_reglages.json"), "w", encoding="utf-8") as f:
+            json.dump(d, f)
+    except OSError:
+        pass
+
+
 def charger_precision(log=None) -> dict:
     """precision.json du robot (copie gardée sur le PC si pas d'Internet). {} si rien."""
     copie = os.path.join(dossier_app(), "precision.json")
@@ -388,6 +655,10 @@ class Visionneuse:
         pc = dt.datetime.now(dt.timezone.utc)
         self.t0_heure, self.t0_pc = (maintenant, time.time()) if maintenant else \
             ((pc, time.time()) if pc >= self.d.run - dt.timedelta(hours=1) else (None, None))
+        # heure affichée au-dessus des flèches : UNIQUEMENT l'heure Internet (jamais l'horloge du PC)
+        self.heure_net = (maintenant if maintenant.tzinfo else maintenant.replace(tzinfo=dt.timezone.utc)) \
+            if maintenant else None
+        self.heure_net_mono = time.monotonic()
         self.win = tk.Toplevel(parent) if parent is not None else tk.Tk()
         w = self.win
         w.title(f"ACIS MétéoNav — Météo Marine Tunisie{titre_extra}")
@@ -396,8 +667,12 @@ class Visionneuse:
         w.geometry(f"{L}x{H}+{max(0, (sl - L) // 2)}+{max(0, (sh - 60 - H) // 2)}")
         w.minsize(640, 460)
         self.couche = tk.StringVar(value="vent")
-        self.chiffres = tk.BooleanVar(value=True)
-        self.marge_on = tk.BooleanVar(value=True)
+        reg = lire_reglages()
+        self.chiffres = tk.BooleanVar(value=reg.get("valeurs", True))
+        self.marge_on = tk.BooleanVar(value=reg.get("marge", True))
+        self.villes_on = tk.BooleanVar(value=reg.get("villes", True))
+        self.vitesse = tk.IntVar(value=reg.get("vitesse_ms", 700))
+        self._fen_param = None
         self.k = 0
         self.lecture = None
         self.repere = None
@@ -411,8 +686,14 @@ class Visionneuse:
 
         haut = tk.Frame(w, bg=BLEU)
         haut.pack(side="top", fill="x")
-        tk.Label(haut, text="ACIS MétéoNav", bg=BLEU, fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(8, 2))
-        tk.Label(haut, text="A.C.I.S Marine", bg=BLEU, fg="#c9d2ff", font=("Segoe UI", 9)).pack(side="left", padx=(0, 10))
+        # lune (phase à l'heure affichée) ; au survol, sa fiche s'affiche dans le panneau de droite
+        self.lune_survol = False
+        self._lune_cache = {}
+        self.cv_lune = tk.Canvas(haut, width=34, height=34, bg=BLEU, highlightthickness=0, cursor="hand2")
+        self.cv_lune.pack(side="left", padx=(8, 0), pady=2)
+        self.cv_lune.bind("<Enter>", lambda e: self._survol_lune(True))
+        self.cv_lune.bind("<Leave>", lambda e: self._survol_lune(False))
+        tk.Label(haut, text="ACIS MétéoNav", bg=BLEU, fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(6, 12))
         for nom, (lib, *_r) in COUCHES.items():
             if nom == "rafales" and not any("GUST" in self.d.par[e] for e in self.d.echeances[:3]):
                 continue
@@ -421,19 +702,18 @@ class Visionneuse:
                 continue
             if nom == "courant" and not self.d.courants:
                 continue
+            if nom == "maree" and not self.d.maree:
+                continue
             tk.Radiobutton(haut, text=lib, value=nom, variable=self.couche, indicatoron=False, command=self.dessiner,
                            bg="#2c3a85", fg="white", selectcolor="#f6b400", activebackground="#3b4aa0",
                            font=("Segoe UI", 9, "bold"), padx=8, pady=2, relief="flat",
                            offrelief="flat").pack(side="left", padx=1, pady=4)
-        tk.Checkbutton(haut, text="Valeurs", variable=self.chiffres, command=self.dessiner, bg=BLEU, fg="white",
-                       selectcolor=BLEU, activebackground=BLEU, font=("Segoe UI", 9)).pack(side="left", padx=(10, 0))
-        self.cb_marge = tk.Checkbutton(haut, text="Marge de sécurité", variable=self.marge_on, command=self.dessiner,
-                                       bg=BLEU, fg="white", selectcolor=BLEU, activebackground=BLEU,
-                                       font=("Segoe UI", 9))
-        self.cb_marge.pack(side="left")
-        drapeau = tk.Canvas(haut, width=50, height=34, bg=BLEU, highlightthickness=0)
+        self.cb_marge = None                       # « Valeurs » et « Marge de sécurité » : dans Paramètres (drapeau)
+        self.texte_marge = "Marge de sécurité sur les vents forts"
+        drapeau = tk.Canvas(haut, width=50, height=34, bg=BLEU, highlightthickness=0, cursor="hand2")
         drapeau.pack(side="right", padx=(16, 10), pady=2)            # isolé, en haut à droite
         dessiner_drapeau_tunisie(drapeau, 1, 1, 48, 32)
+        drapeau.bind("<Button-1>", lambda e: self.ouvrir_parametres())   # le drapeau ouvre les paramètres
         self.zone = ttk.Combobox(haut, values=[z[0] for z in ZONES], state="readonly", width=26)
         self.zone.set(ZONES[0][0])
         self.zone.pack(side="right", padx=6)
@@ -472,16 +752,23 @@ class Visionneuse:
                  justify="center").pack(side="bottom", fill="x", pady=(2, 3))
         cmd = tk.Frame(droite, bg="#f7f8fc")
         cmd.pack(side="bottom", fill="x", padx=8, pady=4)
+        # date et heure Internet (tout en haut du panneau de droite)
+        self.lbl_heure = tk.Label(droite, text="…", bg=BLEU, fg="white",
+                                  font=("Segoe UI", 12, "bold"), justify="center", pady=6)
+        self.lbl_heure.pack(side="top", fill="x")
         gros = dict(font=("Segoe UI", 13, "bold"), bg=BLEU, fg="white", activebackground="#3b4aa0",
                     activeforeground="white", relief="flat", height=2, cursor="hand2")
-        tk.Button(cmd, text="◀  Avant", command=lambda: self.avancer(-1), **gros).grid(row=0, column=0, sticky="ew", padx=(0, 3), pady=3)
-        tk.Button(cmd, text="Après  ▶", command=lambda: self.avancer(1), **gros).grid(row=0, column=1, sticky="ew", padx=(3, 0), pady=3)
+        fleche = dict(gros, font=("Segoe UI Symbol", 20, "bold"), height=1)      # juste un grand triangle
+        gros = dict(gros, height=1, pady=6)                                     # Zoom : un peu moins haut
+        tk.Button(cmd, text="◀", command=lambda: self.avancer(-1), **fleche).grid(row=0, column=0, sticky="ew", padx=(0, 3), pady=3)
+        tk.Button(cmd, text="▶", command=lambda: self.avancer(1), **fleche).grid(row=0, column=1, sticky="ew", padx=(3, 0), pady=3)
         pas = tk.Frame(cmd, bg="#f7f8fc")
         pas.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        self.pas_h = tk.IntVar(value=1)
+        self.pas_h = tk.IntVar(value=reg.get("pas_h", 1) if reg.get("pas_h") in (1, 3) else 1)
         tk.Label(pas, text="Pas :", bg="#f7f8fc", font=("Segoe UI", 9, "bold"), fg=BLEU).pack(side="left")
         for h in (1, 3):
             tk.Radiobutton(pas, text=f"{h} h", value=h, variable=self.pas_h, indicatoron=False, width=4,
+                           command=self._reglage_change,
                            font=("Segoe UI", 9, "bold"), bg="#dfe3f2", selectcolor="#f6b400",
                            relief="flat", offrelief="flat").pack(side="left", padx=2)
         self.btn_lect = tk.Button(pas, text="▶ Animation", command=self.basculer_lecture, font=("Segoe UI", 8),
@@ -491,13 +778,17 @@ class Visionneuse:
         tk.Button(cmd, text="−  Zoom", command=lambda: self._zoomer(1 / 1.5, self.W / 2, self.H / 2), **gros).grid(row=2, column=1, sticky="ew", padx=(3, 0), pady=3)
         cmd.columnconfigure(0, weight=1, uniform="b")
         cmd.columnconfigure(1, weight=1, uniform="b")
-        self.fiche = tk.Text(droite, font=("Segoe UI", 10), bg="#f7f8fc", relief="flat", wrap="word",
-                             padx=8, pady=6, cursor="arrow")
+        self.fiche = tk.Text(droite, font=("Segoe UI", 9), bg="#f7f8fc", relief="flat", wrap="word",
+                             padx=8, pady=4, cursor="arrow", exportselection=False, takefocus=0,
+                             selectbackground="#f7f8fc", inactiveselectbackground="#f7f8fc",
+                             selectforeground="#000000", highlightthickness=0)
         self.fiche.pack(side="top", fill="both", expand=True)
         self.fiche.tag_configure("t", font=("Segoe UI", 12, "bold"), foreground=BLEU)
-        self.fiche.tag_configure("b", font=("Segoe UI", 10, "bold"))
+        self.fiche.tag_configure("b", font=("Segoe UI", 9, "bold"))
         self.fiche.tag_configure("m", font=("Segoe UI", 9, "bold"), foreground="#c0392b")
         self.fiche.tag_configure("g", foreground="#6b7290", font=("Segoe UI", 8))
+        self.fiche.tag_configure("d", foreground=BLEU, font=("Segoe UI", 8))
+        self.fiche.tag_configure("s", spacing1=6)                  # petit espace avant une rubrique
         self.cv = tk.Canvas(centre, bg="#1a2046", highlightthickness=0, cursor="crosshair")
         self.cv.pack(side="left", fill="both", expand=True)
         self.cv.bind("<Configure>", self._taille)
@@ -519,6 +810,98 @@ class Visionneuse:
         self._recu = []                            # rempli par le fil de téléchargement, lu par la fenêtre
         threading.Thread(target=lambda: self._recu.append(charger_precision()), daemon=True).start()
         self.win.after(300, self._attendre_precision)
+        if self.heure_net is None:                 # carte lancée seule : on demande l'heure à Internet
+            self._recu_heure = []
+
+            def chercher():
+                try:
+                    import heure
+                    self._recu_heure.append(heure.heure_internet())
+                except Exception as e:             # noqa: BLE001
+                    self._recu_heure.append(e)
+            threading.Thread(target=chercher, daemon=True).start()
+            self.win.after(300, self._attendre_heure)
+        self._heure_tick()
+
+    # ---------------- heure Internet (affichée au-dessus des flèches)
+    def _attendre_heure(self):
+        if not self._recu_heure:
+            try:
+                self.win.after(300, self._attendre_heure)
+            except Exception:                       # noqa: BLE001
+                pass
+            return
+        r = self._recu_heure.pop()
+        if isinstance(r, dt.datetime):
+            self.heure_net, self.heure_net_mono = r, time.monotonic()
+            self.t0_heure, self.t0_pc = r, time.time()    # l'échéance « maintenant » suit aussi l'heure Internet
+            self._heure_tick(boucle=False)
+        else:
+            self.lbl_heure.config(text="Heure indisponible (connexion ?)", fg="#ff8a80")
+
+    def _heure_tick(self, boucle: bool = True):
+        if self.heure_net is not None:
+            t = self.heure_net + dt.timedelta(seconds=time.monotonic() - self.heure_net_mono) + TUNISIE
+            self.lbl_heure.config(text=f"{JOURS[t.weekday()]} {t:%d/%m/%Y}   {t:%H:%M:%S}", fg="white")
+        if boucle:
+            try:
+                self.win.after(1000, self._heure_tick)
+            except Exception:                       # noqa: BLE001
+                pass
+
+    # ---------------- paramètres (clic sur le drapeau)
+    def ouvrir_parametres(self):
+        tk = self.tk
+        if self._fen_param is not None and self._fen_param.winfo_exists():
+            self._fen_param.lift()
+            self._fen_param.focus_force()
+            return
+        f = tk.Toplevel(self.win)
+        self._fen_param = f
+        f.title("Paramètres — ACIS MétéoNav")
+        f.configure(bg="#f7f8fc")
+        f.resizable(False, False)
+        f.transient(self.win)
+        tk.Label(f, text="⚙  Paramètres de la carte", bg=BLEU, fg="white", font=("Segoe UI", 12, "bold"),
+                 pady=6).pack(fill="x")
+        corps = tk.Frame(f, bg="#f7f8fc", padx=14, pady=10)
+        corps.pack(fill="both")
+        opt = dict(bg="#f7f8fc", font=("Segoe UI", 10), anchor="w", activebackground="#f7f8fc")
+        tk.Checkbutton(corps, text="Afficher les valeurs (nœuds, mètres)", variable=self.chiffres,
+                       command=self._reglage_change, **opt).pack(fill="x")
+        self.cb_marge = tk.Checkbutton(corps, text=self.texte_marge, variable=self.marge_on,
+                                       command=self._reglage_change, **opt)
+        self.cb_marge.pack(fill="x")
+        tk.Checkbutton(corps, text="Afficher les noms des villes", variable=self.villes_on,
+                       command=self._reglage_change, **opt).pack(fill="x")
+        lp = tk.Frame(corps, bg="#f7f8fc")
+        lp.pack(fill="x", pady=(10, 0))
+        tk.Label(lp, text="Pas des flèches ◀ ▶ :", **opt).pack(side="left")
+        for h in (1, 3):
+            tk.Radiobutton(lp, text=f"{h} h", value=h, variable=self.pas_h, command=self._reglage_change,
+                           **opt).pack(side="left", padx=4)
+        tk.Label(corps, text="Vitesse de l'animation (une image toutes les … ms) :", **opt).pack(fill="x", pady=(10, 0))
+        tk.Scale(corps, from_=200, to=2000, resolution=100, orient="horizontal", variable=self.vitesse,
+                 command=lambda _v: self._reglage_change(redessiner=False), bg="#f7f8fc", highlightthickness=0,
+                 length=300).pack(fill="x")
+        tk.Label(corps, text=f"Fichier : {os.path.basename(self.d.chemin)}", bg="#f7f8fc", fg="#6b7290",
+                 font=("Segoe UI", 8), anchor="w").pack(fill="x", pady=(10, 0))
+        tk.Button(f, text="✔ Fermer", command=f.destroy, font=("Segoe UI", 11, "bold"), bg=BLEU, fg="white",
+                  activebackground="#3b4aa0", activeforeground="white", relief="flat", cursor="hand2",
+                  pady=4).pack(fill="x", padx=14, pady=(0, 12))
+        f.update_idletasks()                         # centrée sur la carte
+        x = self.win.winfo_rootx() + (self.win.winfo_width() - f.winfo_width()) // 2
+        y = self.win.winfo_rooty() + (self.win.winfo_height() - f.winfo_height()) // 3
+        f.geometry(f"+{max(0, x)}+{max(0, y)}")
+        f.bind("<Escape>", lambda e: f.destroy())
+
+    def _reglage_change(self, redessiner: bool = True):
+        ecrire_reglages({"valeurs": self.chiffres.get(), "marge": self.marge_on.get(),
+                         "villes": self.villes_on.get(), "vitesse_ms": int(self.vitesse.get()),
+                         "pas_h": int(self.pas_h.get())})
+        if redessiner:
+            self.dessiner()
+            self._ecrire_fiche()
 
     # ---------------- précision (en arrière-plan : la carte s'ouvre tout de suite ;
     # tkinter ne doit être touché que par le fil principal, d'où cette petite attente)
@@ -595,7 +978,7 @@ class Visionneuse:
                 self.aller(0)
             else:
                 self.avancer(1)
-            self.lecture = self.win.after(700, pas)
+            self.lecture = self.win.after(max(200, int(self.vitesse.get())), pas)
         pas()
 
     # ---------------- vue
@@ -784,16 +1167,168 @@ class Visionneuse:
                 pts += self.xy(la, lo)
             if len(pts) >= 4:
                 cv.create_line(pts, fill="#c8cbe0", dash=(5, 4))
+        if remplir:
+            self._filigrane()
         if not rapide:
             self._symboles(couche)
-            self._villes()
+            if self.villes_on.get():
+                self._villes()
         if self.repere:
             x, y = self.xy(*self.repere)
             for lw, c in ((5, "#000000"), (2, "#ffffff")):
                 for a, b in ((0, -1), (0, 1), (-1, 0), (1, 0)):
                     cv.create_line(x + a * 5, y + b * 5, x + a * 13, y + b * 13, width=lw, fill=c)
+        self._dessiner_lune()
         self._entete(couche)
         self._legende(couche)
+
+    # ---------------- sigle A.C.I.S Marine en filigrane (sur la terre, entre Algérie, Tunisie et Libye)
+    FILIGRANE = (34.8, 8.15)                     # lat, lon : terre, frontière tuniso-algérienne (Kasserine–Tébessa)
+
+    def _logo_filigrane(self):
+        """Logo A.C.I.S (ressources/logo_256.png ou logo_144.png) éclairci vers la couleur de la terre ; None si absent."""
+        if hasattr(self, "_logo_fil"):
+            return self._logo_fil
+        self._logo_fil = None
+        ici = os.path.dirname(os.path.abspath(__file__))
+        base = getattr(sys, "_MEIPASS", ici)
+        for d in (ici, os.path.join(ici, "ressources"), os.path.join(base, "ressources"),
+                  os.path.join(os.path.dirname(ici), "ressources")):
+            for n in ("logo_256.png", "logo_144.png", "logo_96.png"):
+                p = os.path.join(d, n)
+                if not os.path.exists(p):
+                    continue
+                try:
+                    src = self.tk.PhotoImage(file=p)
+                    if src.width() >= 256:                   # 256 -> 192 px
+                        src = src.zoom(3).subsample(4)
+                    w, h = src.width(), src.height()
+                    out = self.tk.PhotoImage(width=w, height=h)
+                    # « gravé » dans la terre : le fond blanc du logo disparaît, seuls les traits foncés
+                    # (ancre, lettres) ressortent, un peu plus clairs que la terre
+                    fr, fg, fb = _hex("#3b3f5c")             # couleur de la terre
+                    tr, tg, tb = _hex("#6a71a0")             # couleur des traits
+                    lignes, transp = [], []
+                    for y in range(h):
+                        lig = []
+                        for x in range(w):
+                            if src.transparency_get(x, y):
+                                lig.append("#3b3f5c")
+                                transp.append((x, y))
+                                continue
+                            r, g, b = src.get(x, y)[:3]
+                            a = max(0.0, min(1.0, (200 - (0.3 * r + 0.59 * g + 0.11 * b)) / 140))   # foncé -> 1
+                            if a <= 0.02:
+                                transp.append((x, y))
+                            lig.append("#%02x%02x%02x" % (int(fr + (tr - fr) * a), int(fg + (tg - fg) * a),
+                                                          int(fb + (tb - fb) * a)))
+                        lignes.append("{" + " ".join(lig) + "}")
+                    out.put(" ".join(lignes))
+                    for x, y in transp:                      # fond du logo : on voit la terre (et les frontières)
+                        out.transparency_set(x, y, True)
+                    self._logo_fil = out
+                    return out
+                except Exception:                            # noqa: BLE001
+                    continue
+        return None
+
+    def _filigrane(self):
+        cv = self.cv
+        self._fil_zone = None
+        x, y = self.xy(*self.FILIGRANE)
+        logo = self._logo_filigrane()
+        if logo is not None:
+            cv.create_image(x, y, image=logo, anchor="center")     # le logo porte déjà « A.C.I.S MARINE »
+            r = logo.width() / 2
+            self._fil_zone = (x, y, r)               # pas de symboles météo sur le logo (c'est la terre)
+            return
+        # pas de fichier logo : sigle écrit
+        R = 82
+        cv.create_oval(x - R, y - R, x + R, y + R, outline="#4c5276", width=5)
+        cv.create_oval(x - R + 9, y - R + 9, x + R - 9, y + R - 9, outline="#464b6e", width=2)
+        cv.create_text(x, y - 10, text="A.C.I.S", fill="#555b80", font=("Segoe UI", 32, "bold"))
+        cv.create_text(x, y + 32, text="MARINE", fill="#4f557a", font=("Segoe UI", 17, "bold"))
+
+    def _dessiner_lune(self):
+        """Lune dans la bande bleue (à gauche de « ACIS MétéoNav »), dessinée selon sa phase à l'heure affichée :
+        croissant, quartier, gibbeuse ou ronde."""
+        cv = self.cv_lune
+        cv.delete("all")
+        frac, ph = phase_lune(self.d.date(self.k).timestamp())
+        R = 14
+        cx, cy = 17, 17
+        cv.create_oval(cx - R, cy - R, cx + R, cy + R, fill="#2b3150", outline="#6b74a3")   # partie sombre
+        s = 1 if ph < 0.5 else -1                   # croissante : éclairée à droite (vue de Tunisie)
+        k = 1 - 2 * frac                            # bord de l'ombre : 1 = nouvelle, 0 = quartier, -1 = pleine
+        pts = []
+        for q in range(0, 37):                      # bord éclairé, du haut vers le bas
+            a = math.radians(-90 + q * 5)
+            pts += (cx + s * R * math.cos(a), cy + R * math.sin(a))
+        for q in range(36, -1, -1):                 # ligne d'ombre (demi-ellipse), du bas vers le haut
+            a = math.radians(-90 + q * 5)
+            pts += (cx + s * k * R * math.cos(a), cy + R * math.sin(a))
+        if frac > 0.01:
+            cv.create_polygon(pts, fill="#f4efc8", outline="")
+
+    def _survol_lune(self, dessus: bool):
+        self.lune_survol = dessus
+        self._ecrire_fiche()
+
+    def _prochaines_phases(self, t: dt.datetime) -> tuple:
+        """(prochaine pleine lune, prochaine nouvelle lune) après t, à l'heure près (gardé en mémoire)."""
+        cle = t.strftime("%Y%m%d%H")
+        if cle in self._lune_cache:
+            return self._lune_cache[cle]
+        pleine = nouvelle = None
+        prec = phase_lune(t.timestamp())[1]
+        for h in range(1, 31 * 24):
+            u = t + dt.timedelta(hours=h)
+            p = phase_lune(u.timestamp())[1]
+            if pleine is None and prec < 0.5 <= p:
+                pleine = u
+            if nouvelle is None and prec > 0.8 and p < 0.2:
+                nouvelle = u
+            if pleine and nouvelle:
+                break
+            prec = p
+        self._lune_cache[cle] = (pleine, nouvelle)
+        return pleine, nouvelle
+
+    def _fiche_lune(self, f) -> None:
+        """Fiche de la lune (survol de la lune dans la bande bleue), comme la fiche d'un point de la carte."""
+        t = self.d.date(self.k)
+        loc = t + TUNISIE
+        frac, ph = phase_lune(t.timestamp())
+        tm, tm2 = type_maree(ph)
+        la, lo = self.vue["lat"], self.vue["lon"]            # centre de la carte affichée
+        debut = dt.datetime(loc.year, loc.month, loc.day, tzinfo=dt.timezone.utc) - TUNISIE
+        lev, cou = lever_coucher(lune_pos, None, debut.timestamp(), la, lo)
+        pleine, nouvelle = self._prochaines_phases(t)
+
+        def jour(u):
+            if u is None:
+                return "—"
+            u = u + TUNISIE
+            return f"{JOURS[u.weekday()]} {u:%d/%m} vers {u:%H}h"
+        f.insert("end", "Lune\n", "t")
+        f.insert("end", f"{JOURS[loc.weekday()]} {loc:%d/%m} à {loc:%H}h\n", "d")
+        f.insert("end", "Phase : ", ("b", "s"))
+        f.insert("end", f"{nom_lune(frac, ph)}\n", "s")
+        f.insert("end", "Éclairée : ", "b")
+        f.insert("end", f"{round(frac * 100)} %\n")
+        f.insert("end", "Âge : ", "b")
+        f.insert("end", f"{ph * 29.53:.1f} jours\n".replace(".", ","))
+        f.insert("end", "Lever : ", ("b", "s"))
+        f.insert("end", f"{hm(lev)}   ", "s")
+        f.insert("end", "Coucher : ", ("b", "s"))
+        f.insert("end", f"{hm(cou)}\n", "s")
+        f.insert("end", "(au centre de la carte)\n", "g")
+        f.insert("end", "Marée : ", ("b", "s"))
+        f.insert("end", f"{tm}, {tm2}\n", "s")
+        f.insert("end", "Pleine lune : ", ("b", "s"))
+        f.insert("end", jour(pleine) + "\n", "s")
+        f.insert("end", "Nouvelle lune : ", "b")
+        f.insert("end", jour(nouvelle) + "\n")
 
     def _etiquette(self, x, y, txt, couleur="#ffffff"):
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
@@ -866,6 +1401,9 @@ class Visionneuse:
                 if x < 16 or x > self.W - 12 or y < 14 or y > self.H - 8:
                     continue
                 lo_pt = lo - pas_deg
+                fz = getattr(self, "_fil_zone", None)
+                if fz and couche in ("vent", "rafales") and (x - fz[0]) ** 2 + (y - fz[1]) ** 2 < (fz[2] + 16) ** 2:
+                    continue                         # laisse le logo A.C.I.S propre
                 if couche in ("vent", "rafales", "pluie", "nuages"):
                     w = self.d.vent(self.k, la, lo_pt)
                     if not w:
@@ -883,7 +1421,7 @@ class Visionneuse:
                         txt = f"{kt:.0f}" + (f" (+{m})" if m else "")
                         self._etiquette(x - math.sin(a) * 12, y + math.cos(a) * 12, txt,
                                         "#ffd166" if m else "#ffffff")
-                elif couche == "courant":
+                elif couche in ("courant", "maree"):          # marée : flèches du courant par-dessus
                     if not self.d.est_mer(la, lo_pt):
                         continue
                     c = self.d.courant(self.k, la, lo_pt)
@@ -936,9 +1474,14 @@ class Visionneuse:
                              fg="#ff8a80" if age >= 18 else "#7CFC9A")
         m = self.marges.get(int(lead // 24), 0)
         if self.marges:
-            self.cb_marge.config(text=f"Marge de sécurité ({'+' + str(m) + ' nd' if m else 'aucune'} à ce jour)")
+            self.texte_marge = f"Marge de sécurité sur les vents forts ({'+' + str(m) + ' nd' if m else 'aucune'} à ce jour)"
         else:
-            self.cb_marge.config(text="Marge de sécurité (contrôle en cours)")
+            self.texte_marge = "Marge de sécurité sur les vents forts (contrôle en cours)"
+        try:
+            if self.cb_marge is not None and self.cb_marge.winfo_exists():
+                self.cb_marge.config(text=self.texte_marge)
+        except Exception:                            # noqa: BLE001
+            pass
 
     def _legende(self, couche):
         lg = self.legende
@@ -960,31 +1503,108 @@ class Visionneuse:
             lg.create_text(x0 + pos * larg, 22, text=f"{v:g}", font=("Segoe UI", 8), fill="#333")
         lg.create_text(x0 + larg + 8, 10, text=unite, anchor="w", font=("Segoe UI", 9), fill="#333")
 
+    def _fiche_maree_astres(self, f, la: float, lo: float) -> None:
+        """Marée (hauteur, PM/BM du jour, courbe) puis soleil et lune du jour — comme la carte téléphone."""
+        t = self.d.date(self.k)
+        loc = t + TUNISIE
+        debut = dt.datetime(loc.year, loc.month, loc.day, tzinfo=dt.timezone.utc) - TUNISIE   # 0 h en Tunisie
+        frac, ph = phase_lune(t.timestamp())
+        tm, tm2 = type_maree(ph)
+        serie = self.d.serie_maree(la, lo) if self.d.est_mer(la, lo) else None
+        if serie:
+            hn, h0 = self.d.heure_maree(t), self.d.heure_maree(debut)
+            ici = None
+            if 0 <= hn <= len(serie) - 1:
+                i = math.floor(hn)
+                j = min(i + 1, len(serie) - 1)
+                ici = serie[i] + (serie[j] - serie[i]) * (hn - i)
+            if ici is None or math.isnan(ici):
+                f.insert("end", "Marée : ", ("b", "s"))
+                f.insert("end", "hors de la période prévue\n", "g")
+            else:
+                monte = serie[j] >= serie[i] if j > i else serie[i] >= serie[max(0, i - 1)]
+                f.insert("end", "Marée : ", ("b", "s"))
+                f.insert("end", f"{signe(ici)} m {'↑ montante' if monte else '↓ descendante'}\n", "s")
+                ex = extremes(serie, h0, h0 + 24)
+                amp = (max(e[1] for e in ex) - min(e[1] for e in ex)) if ex else 0
+                f.insert("end", f"{tm}, {tm2}\n", "d")
+                if amp >= 0.06:
+                    f.insert("end", f"marnage du jour : {amp:.2f} m\n".replace(".", ","), "d")
+                t0m = self.d.maree_t0.timestamp()
+                if ex and amp >= 0.06:
+                    morceaux = [f"{'PM' if e[2] else 'BM'} {hm(t0m + e[0] * 3600)} {signe(e[1])}" for e in ex]
+                    for q in range(0, len(morceaux), 2):                 # deux par ligne
+                        f.insert("end", "  ·  ".join(morceaux[q:q + 2]) + "\n", "g")
+                else:
+                    f.insert("end", "marée très faible ici (moins de 6 cm)\n", "g")
+        else:
+            f.insert("end", "Marée : ", ("b", "s"))
+            f.insert("end", f"{tm}, {tm2}\n", ("d", "s"))
+        so = lever_coucher(soleil_pos, -0.833, debut.timestamp(), la, lo)
+        lu = lever_coucher(lune_pos, None, debut.timestamp(), la, lo)
+        f.insert("end", "Soleil : ", ("b", "s"))
+        f.insert("end", f"{hm(so[0])} – {hm(so[1])}\n", "s")
+        f.insert("end", "Lune : ", "b")
+        f.insert("end", f"{nom_lune(frac, ph)} {round(frac * 100)} %  ↑{hm(lu[0])} ↓{hm(lu[1])}\n")
+
+    def _courbe_maree(self, f, serie: list, h0: float, hn: float) -> None:
+        """Petite courbe de la marée du jour (0 h – 24 h), trait jaune = heure affichée."""
+        tk = self.tk
+        Wc, Hc = 236, 40
+        cv = tk.Canvas(f, width=Wc, height=Hc, bg="#eef0f6", highlightthickness=0)
+        vals = []
+        for x in range(25):
+            k = round(h0 + x)
+            v = serie[k] if 0 <= k < len(serie) else float("nan")
+            vals.append(v)
+        vmax = max([0.1] + [abs(v) for v in vals if not math.isnan(v)])
+        cv.create_line(0, Hc / 2, Wc, Hc / 2, fill="#b6bac8", dash=(3, 3))
+        pts = []
+        for x, v in enumerate(vals):
+            if not math.isnan(v):
+                pts += (x / 24 * Wc, Hc / 2 - v / vmax * (Hc / 2 - 3))
+        if len(pts) >= 4:
+            cv.create_line(*pts, fill="#2f6bd8", width=2, smooth=True)
+        xn = (hn - h0) / 24 * Wc
+        if 0 <= xn <= Wc:
+            cv.create_line(xn, 0, xn, Hc, fill="#f6b400", width=2)
+        for hh in (6, 12, 18):
+            cv.create_text(hh / 24 * Wc, Hc - 2, text=f"{hh}h", anchor="s", fill="#6b7290", font=("Segoe UI", 6))
+        self._courbe = cv
+        f.window_create("end", window=cv)
+        f.insert("end", "\n")
+
     def _ecrire_fiche(self):
         f = self.fiche
+        if getattr(self, "_courbe", None) is not None:
+            try:
+                self._courbe.destroy()
+            except Exception:                        # noqa: BLE001
+                pass
+            self._courbe = None
         f.config(state="normal")
         f.delete("1.0", "end")
+        if getattr(self, "lune_survol", False):
+            self._fiche_lune(f)
+            f.config(state="disabled")
+            return
         t = self.d.date(self.k) + TUNISIE
-        f.insert("end", f"{JOURS[t.weekday()]} {t:%d/%m} à {t:%H}h\n", "t")
         point = self.survol or self.repere
-        if not point:
-            f.insert("end", "\nPassez la souris sur la carte : la position et la météo du point s'affichent ici.\n"
-                            "Un clic garde le point marqué.\n", "g")
-        else:
+        if point:
             la, lo = point
-            f.insert("end", ("Curseur" if self.survol else "Point marqué") + "\n", "g")
-            f.insert("end", f"{dm(la, 'N', 'S')}   {dm(lo, 'E', 'O')}\n\n", "b")
+            f.insert("end", f"{dm(la, 'N', 'S')}   {dm(lo, 'E', 'O')}\n", "b")
+            run = self.d.run + TUNISIE
+            f.insert("end", f"Météo prévue pour : {JOURS[t.weekday()]} {t:%d/%m} à {t:%H}h\n", "d")
+            f.insert("end", f"Fichier météo NOAA du : {JOURS[run.weekday()]} {run:%d/%m} à {run:%H}h\n", "d")
             v = self.d.fiche(self.k, la, lo)
             if "vent" in v:
                 kt, de = v["vent"]
-                f.insert("end", "Vent : ", "b")
-                f.insert("end", f"{kt:.0f} nds du {cardinal(de)} ({de:.0f}°)\n")
+                f.insert("end", "Vent : ", ("b", "s"))
+                f.insert("end", f"{kt:.0f} nds du {cardinal(de)} ({de:.0f}°)"
+                         + (f" · rafales {v['rafales']:.0f}" if "rafales" in v else "") + "\n", "s")
                 m = self.marge(self.k, max(kt, v.get("rafales", 0)))
                 if m:
                     f.insert("end", f"  Marge de sécurité : +{m} nds → jusqu'à {kt + m:.0f} nds\n", "m")
-            if "rafales" in v:
-                f.insert("end", "Rafales : ", "b")
-                f.insert("end", f"{v['rafales']:.0f} nds\n")
             if "vagues" in v:
                 f.insert("end", "Vagues : ", "b")
                 txt = f"{v['vagues']:.1f} m"
@@ -996,24 +1616,21 @@ class Visionneuse:
             if "courant" in v:
                 f.insert("end", "Courant : ", "b")
                 f.insert("end", f"{v['courant'][0]:.1f} nds vers le {cardinal(v['courant'][1])}\n")
-            if "pluie" in v:
+            if "pluie" in v or "nuages" in v:
                 f.insert("end", "Pluie : ", "b")
-                f.insert("end", ("aucune" if v["pluie"] < 0.1 else f"{v['pluie']:.1f} mm/h") + "\n")
-            if "nuages" in v:
-                f.insert("end", "Nuages : ", "b")
-                f.insert("end", f"{v['nuages']:.0f} %\n")
+                txt = ("aucune" if v.get("pluie", 0) < 0.1 else f"{v['pluie']:.1f} mm/h") if "pluie" in v else "—"
+                if "nuages" in v:
+                    txt += f" · nuages {v['nuages']:.0f} %"
+                f.insert("end", txt + "\n")
             if not v:
-                f.insert("end", "Hors de la zone téléchargée.\n")
-        f.insert("end", "\n")
+                f.insert("end", "Hors de la zone téléchargée.\n", "s")
+            self._fiche_maree_astres(f, la, lo)
         pe = (self.precision or {}).get("par_echeance") or {}
         s = pe.get(f"J+{int(self.d.echeances[self.k] // 24)}")
         if s and s.get("n", 0) >= 100:
-            f.insert("end", "Précision mesurée à cette échéance\n", "b")
+            f.insert("end", "Précision mesurée à cette échéance\n", ("b", "s"))
             f.insert("end", f"écart moyen {s['ecart_moyen_kt']} nds, {s['pct_a_5kt']} % à ±5 nds "
                             f"({self.precision.get('periode_jours', 30)} derniers jours, 7 aéroports côtiers)\n", "g")
-        else:
-            f.insert("end", "Contrôle de la précision en cours : la marge de sécurité apparaîtra quand "
-                            "assez de relevés réels seront comparés.\n", "g")
         f.config(state="disabled")
 
 
