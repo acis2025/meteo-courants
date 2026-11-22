@@ -337,207 +337,127 @@ def auto_installation() -> bool:
 
 
 # =========================================================================== interface
-def interface() -> None:
+def dernier_fichier(dossier: str) -> str:
+    """Dernier fichier météo téléchargé (date écrite dans le nom = date Internet), ou ""."""
+    import glob
     import re
+    tous = []
+    for f in glob.glob(os.path.join(dossier, "Tunisie_*.grb2")):
+        m = re.search(r"_(\d{8}_\d{4})\.grb2$", f)
+        if m:
+            tous.append((m.group(1), "complet" in os.path.basename(f), f))
+    return max(tous)[2] if tous else ""
+
+
+def interface() -> None:
+    """La carte ACIS MétéoNav est la fenêtre du programme : elle s'ouvre sur la dernière météo, la météo se
+    télécharge seule à l'ouverture (bouton « ⬇ Télécharger » toujours là), le nom du client et la validité de
+    l'abonnement sont en haut, et tout le reste (téléchargement, XyGrib, abonnement) est dans Paramètres (drapeau).
+    Sans aucun fichier météo (1er lancement), un petit écran d'attente la remplace jusqu'au 1er téléchargement."""
     import tkinter as tk
     import webbrowser
     from tkinter import filedialog, messagebox, ttk
 
     c = charger_config()
     root = tk.Tk()
+    root.withdraw()                     # cachée : la carte (ou l'écran d'attente) est la fenêtre visible
     root.title(f"Météo Marine Tunisie — {MARQUE}")
     try:
         root.iconbitmap(default=ressource("icone.ico"))
     except Exception:
         pass
-    # tient sur les vieux écrans 1366x768 (barre des tâches comprise)
-    # taille ET position : centrée au-dessus de la barre des tâches (écrans 1366x768, zoom Windows 125 %)
-    sl, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    haut = min(520, sh - 120)
-    root.geometry(f"560x{haut}+{max(0, (sl - 560) // 2)}+{max(0, (sh - 70 - haut) // 2)}")
-    root.minsize(500, 440)
-    etat: dict = {"heure": None, "tel": None, "derniers": [], "info": None, "en_cours": False}
-
-    # ---------------- bas : coordonnées toujours visibles
-    pied = tk.Frame(root, bg=BLEU); pied.pack(side="bottom", fill="x")
-    tk.Label(pied, text=f"{MARQUE}  •  {SLOGAN}", bg=BLEU, fg="white",
-             font=("Segoe UI", 9, "bold")).pack(side="left", padx=8, pady=4)
-    for ville, tel, num in reversed(AGENCES):
-        lbl = tk.Label(pied, text=f"{ville} : {tel}", bg=BLEU, fg="#7CFC9A",
-                       font=("Segoe UI", 9, "bold"), cursor="hand2")
-        lbl.pack(side="right", padx=6)
-        lbl.bind("<Button-1>", lambda e, n=num: webbrowser.open(lien_whatsapp(n)))
-
-    # ---------------- en-tête
-    entete = tk.Frame(root); entete.pack(fill="x", padx=8, pady=(6, 0))
     try:
         logo = tk.PhotoImage(file=ressource("logo_96.png"))
         root.iconphoto(True, logo); root._logo = logo
-        try:
-            grand = tk.PhotoImage(file=ressource("logo_144.png"))         # 144 px : numéro lisible
-        except Exception:
-            grand = logo
-        root._logo_grand = grand
-        tk.Label(entete, image=grand).pack(side="left")
     except Exception:
         pass
-    titres = tk.Frame(entete); titres.pack(side="left", padx=8)
-    tk.Label(titres, text=MARQUE.upper(), font=("Segoe UI", 16, "bold"), fg=BLEU).pack(anchor="w")
-    tk.Label(titres, text="Météo Marine Tunisie", font=("Segoe UI", 9), fg=BLEU).pack(anchor="w")
-    for ville, tel, num in AGENCES:
-        wa = tk.Label(titres, text=f"✆ {ville} : {tel}  (WhatsApp)", font=("Segoe UI", 9, "bold"),
-                      fg=VERT_WA, cursor="hand2")
-        wa.pack(anchor="w")
-        wa.bind("<Button-1>", lambda e, n=num: webbrowser.open(lien_whatsapp(n)))
-    ttk.Separator(root).pack(fill="x", padx=8, pady=5)
+    etat: dict = {"heure": None, "tel": None, "derniers": [], "info": None, "en_cours": False,
+                  "carte": None, "attente": None, "journal": [], "fen_act": None, "txt_journal": None,
+                  "lbl_abo_param": None}
 
-    # ---------------- centre : logo en filigrane + nom + grand bouton
-    FOND = "#f0f0f0"
-    centre = tk.Canvas(root, bg=FOND, highlightthickness=0, height=280)
-    centre.pack(fill="both", expand=True)
-    try:
-        img_fond = tk.PhotoImage(file=ressource("fond.png")).zoom(3).subsample(4); root._img_fond = img_fond
-        id_fond = centre.create_image(0, 0, image=img_fond)
-    except Exception:
-        id_fond = None
-    id_nom = centre.create_text(0, 0, text="", font=("Segoe UI", 19, "bold"), fill=BLEU, justify="center")
-    id_val = centre.create_text(0, 0, text="", font=("Segoe UI", 9), fill="green", justify="center")
-    try:
-        img_btn = tk.PhotoImage(file=ressource("bouton_64.png")).zoom(2).subsample(3); root._img_btn = img_btn
-    except Exception:
-        img_btn = None
-    btn_dl = tk.Button(centre, text="  TÉLÉCHARGER LA MÉTÉO", image=img_btn, compound="left",
-                       font=("Segoe UI", 15, "bold"), bg=BLEU, fg="white", activebackground="#2c3a85",
-                       activeforeground="white", disabledforeground="#c8c8c8", relief="flat",
-                       padx=18, pady=7, cursor="hand2")
-    id_btn = centre.create_window(0, 0, window=btn_dl)
-    id_etat = centre.create_text(0, 0, text="", font=("Segoe UI", 10), fill="#333", justify="center")
-    prog = ttk.Progressbar(centre, mode="determinate", length=380)
-    id_prog = centre.create_window(0, 0, window=prog)
-    actions = tk.Frame(centre, bg=FOND)
-    id_act = centre.create_window(0, 0, window=actions)
-    id_sign = centre.create_text(0, 0, text=f"Météo Marine Tunisie  ·  {version_texte()}  ·  {SIGNATURE}",
-                                 font=("Segoe UI", 8, "italic"), fill="#8a90a8")
-    btn_carte = ttk.Button(actions, text="ACIS MétéoNav")
-    btn_carte.pack(side="left", padx=4)
-    btn_ouvrir = ttk.Button(actions, text="Ouvrir dans XyGrib")
-    btn_ouvrir.pack(side="left", padx=4)
-    btn_act = ttk.Button(actions, text="Activer / renouveler")
-    btn_act.pack(side="left", padx=4)
-    btn_par = ttk.Button(actions, text="⚙ Paramètres")
-    btn_par.pack(side="left", padx=4)
-
-    def placer(_e=None):
-        lx = centre.winfo_width() / 2
-        hy = centre.winfo_height()
-        if id_fond:
-            centre.coords(id_fond, lx, hy / 2)
-        y = max(8, (hy - 262) / 2)
-        centre.coords(id_nom, lx, y + 16)
-        centre.coords(id_val, lx, y + 48)
-        centre.coords(id_btn, lx, y + 102)
-        centre.coords(id_etat, lx, y + 156)
-        centre.coords(id_prog, lx, y + 180)
-        centre.coords(id_act, lx, y + 218)
-        centre.coords(id_sign, centre.winfo_width() - 10, hy - 10)
-        centre.itemconfig(id_sign, anchor="se")
-    centre.bind("<Configure>", placer)
-
-    class _Texte:  # petit adaptateur : même usage qu'un Label
-        def __init__(self, ident):
-            self.ident = ident
-
-        def config(self, text=None, fg=None):
-            if text is not None:
-                centre.itemconfig(self.ident, text=text)
-            if fg is not None:
-                centre.itemconfig(self.ident, fill=fg)
-    lbl_nom, lbl_validite, lbl_etat = _Texte(id_nom), _Texte(id_val), _Texte(id_etat)
-
-    # ---------------- paramètres (repliés)
-    cadre = ttk.LabelFrame(root, text="Paramètres — zone 30°N–39°N / 7°E–14°E (côtes + haute mer)")
+    # paramètres du programme (gardés même quand la fenêtre Paramètres est fermée)
     v_vent = tk.BooleanVar(value=c["vent"]); v_vag = tk.BooleanVar(value=c["vagues"])
+    v_maree = tk.BooleanVar(value=c.get("maree", False))
     v_ouv = tk.BooleanVar(value=c["ouvrir"])
     v_jours = tk.StringVar(value=str(c["jours"])); v_pas = tk.StringVar(value=str(c["pas_h"]))
     v_dos = tk.StringVar(value=c["dossier"]); v_xy = tk.StringVar(value=trouver_xygrib(c))
-    pad = {"padx": 6, "pady": 3}
-    ttk.Checkbutton(cadre, text="Vent + rafales", variable=v_vent).grid(row=0, column=0, sticky="w", **pad)
-    ttk.Checkbutton(cadre, text="Vagues", variable=v_vag).grid(row=0, column=1, sticky="w", **pad)
-    ttk.Label(cadre, text="Durée (jours) :").grid(row=1, column=0, sticky="w", **pad)
-    ttk.Combobox(cadre, textvariable=v_jours, values=["3", "5", "7", "10", "16"], width=5,
-                 state="readonly").grid(row=1, column=1, sticky="w")
-    ttk.Label(cadre, text="Pas 5 premiers jours (h) :").grid(row=2, column=0, sticky="w", **pad)
-    ttk.Combobox(cadre, textvariable=v_pas, values=["1", "3", "6"], width=5,
-                 state="readonly").grid(row=2, column=1, sticky="w")
-
-    def choisir_dossier():
-        d = filedialog.askdirectory(initialdir=v_dos.get())
-        if d: v_dos.set(d)
-
-    def choisir_xy():
-        f = filedialog.askopenfilename(title="Emplacement de XyGrib.exe")
-        if f: v_xy.set(f)
-    ttk.Label(cadre, text="Dossier :").grid(row=3, column=0, sticky="w", **pad)
-    ttk.Entry(cadre, textvariable=v_dos).grid(row=3, column=1, sticky="we")
-    ttk.Button(cadre, text="…", width=3, command=choisir_dossier).grid(row=3, column=2, padx=4)
-    ttk.Label(cadre, text="XyGrib :").grid(row=4, column=0, sticky="w", **pad)
-    ttk.Entry(cadre, textvariable=v_xy).grid(row=4, column=1, sticky="we")
-    ttk.Button(cadre, text="…", width=3, command=choisir_xy).grid(row=4, column=2, padx=4)
-    ttk.Checkbutton(cadre, text="Ouvrir automatiquement dans XyGrib", variable=v_ouv
-                    ).grid(row=5, column=0, sticky="w", **pad)
-    v_fermer = tk.BooleanVar(value=c.get("fermer", True))
-    ttk.Checkbutton(cadre, text="Puis fermer cette fenêtre", variable=v_fermer
-                    ).grid(row=5, column=1, sticky="w", **pad)
     v_garder = tk.BooleanVar(value=int(c.get("garder", 2)) > 0)
-    ttk.Checkbutton(cadre, text="Effacer l'historique (garder les 2 derniers téléchargements)",
-                    variable=v_garder).grid(row=8, column=0, columnspan=3, sticky="w", **pad)
-    ttk.Label(cadre, text=f"Identifiant de ce PC : {licence.identifiant_machine()}",
-              font=("Consolas", 9)).grid(row=6, column=0, columnspan=3, sticky="w", **pad)
-    journal = tk.Text(cadre, height=5, font=("Consolas", 8), state="disabled")
-    journal.grid(row=7, column=0, columnspan=3, sticky="nsew", padx=6, pady=(2, 6))
-    cadre.rowconfigure(7, weight=1)
-    cadre.columnconfigure(1, weight=1)
+    v_auto = tk.BooleanVar(value=c.get("auto_demarrage", True))
 
-    def basculer_parametres():
-        """Les paramètres REMPLACENT la zone centrale : la fenêtre garde la même taille."""
-        if cadre.winfo_ismapped():
-            cadre.pack_forget()
-            centre.pack(fill="both", expand=True)
-        else:
-            centre.pack_forget()
-            cadre.pack(fill="both", expand=True, padx=8, pady=(0, 6))
-    ttk.Button(cadre, text="✔ Fermer les paramètres", command=lambda: basculer_parametres()
-               ).grid(row=9, column=0, columnspan=3, pady=(4, 8))
-    btn_par.config(command=basculer_parametres)
+    def fenetre():
+        """Fenêtre visible du moment (parent des petites fenêtres)."""
+        if etat["carte"] is not None:
+            return etat["carte"].win
+        if etat["attente"] is not None:
+            return etat["attente"]["win"]
+        return root
 
+    # ---------------- journal, état, progression (affichés dans la carte ou l'écran d'attente)
     def log(msg):
         def f():
-            journal.config(state="normal"); journal.insert("end", msg + "\n")
-            journal.see("end"); journal.config(state="disabled")
+            etat["journal"].append(msg)
+            del etat["journal"][:-300]
+            t = etat.get("txt_journal")
+            try:
+                if t is not None and t.winfo_exists():
+                    t.config(state="normal"); t.insert("end", msg + "\n"); t.see("end"); t.config(state="disabled")
+            except Exception:
+                pass
         root.after(0, f)
 
-    def statut(msg, couleur="#333"):
-        root.after(0, lambda: lbl_etat.config(text=msg, fg=couleur))
+    COULEURS = {"green": ("#7CFC9A", "green"), "red": ("#ff8a80", "red")}   # (sur fond bleu, sur fond clair)
+
+    def statut(msg, couleur=None):
+        sombre, clair = COULEURS.get(couleur, ("#ffd166", "#333"))
+
+        def f():
+            if etat["carte"] is not None:
+                etat["carte"].statut(msg, sombre)
+            elif etat["attente"] is not None:
+                etat["attente"]["statut"].config(text=msg, fg=clair)
+        root.after(0, f)
+
+    def progression(i, n):
+        def f():
+            if etat["carte"] is not None:
+                etat["carte"].progression(i, n)
+            elif etat["attente"] is not None:
+                etat["attente"]["barre"].config(maximum=max(n, 1), value=i)
+        root.after(0, f)
 
     # ---------------- licence
+    def abonnement():
+        """(nom, détail, couleur) affichés en haut de la carte."""
+        info = etat["info"]
+        if info:
+            fin = f"{info['fin'][8:10]}/{info['fin'][5:7]}/{info['fin'][:4]}"
+            j = info.get("jours_restants")
+            detail = f"abonnement jusqu'au {fin}" + (f" ({j} j)" if j is not None else "")
+            return info["nom"], detail, "#7CFC9A" if j is None or j > 30 else "#ffd166"
+        return etat.get("abo_titre", "Abonnement non activé"), "cliquez ici pour l'activer", "#ff8a80"
+
     def maj_licence(h=None) -> bool:
         try:
-            info = controle_licence(h)
-            etat["info"] = info
-            fin = f"{info['fin'][8:10]}/{info['fin'][5:7]}/{info['fin'][:4]}"
-            reste = (f" — {info['jours_restants']} jours restants" if info["jours_restants"] is not None else "")
-            lbl_nom.config(text=info["nom"])
-            lbl_validite.config(text=f"✔ Abonnement valable jusqu'au {fin}{reste}", fg="green")
-            root.title(f"{info['nom']} — Météo Marine Tunisie — {MARQUE}")
-            if not etat["en_cours"]:
-                btn_dl.config(state="normal", bg=BLEU)
-            return True
+            etat["info"] = controle_licence(h)
+            ok = True
         except licence.LicenceInvalide as e:
             etat["info"] = None
-            lbl_nom.config(text="Abonnement non activé" if "Aucune" in str(e) else "Abonnement à renouveler")
-            lbl_validite.config(text=f"✖ {e}\nContact : {TELEPHONES}", fg="red")
-            btn_dl.config(state="disabled", bg="#8a8fa8")
-            return False
+            etat["abo_titre"] = "Abonnement non activé" if "Aucune" in str(e) else "Abonnement à renouveler"
+            etat["abo_erreur"] = str(e)
+            ok = False
+        nom, detail, _coul = abonnement()
+        if etat["carte"] is not None:
+            etat["carte"].maj_abonnement()
+        if etat["attente"] is not None:
+            etat["attente"]["abo"].config(text=f"{nom}\n{detail}", fg="green" if ok else "red")
+        lbl = etat.get("lbl_abo_param")
+        try:
+            if lbl is not None and lbl.winfo_exists():
+                lbl.config(text=f"{nom} — {detail}" + ("" if ok else f"\n{etat.get('abo_erreur', '')}"),
+                           fg="green" if ok else "red")
+        except Exception:
+            pass
+        return ok
 
     def _reussite():
         maj_licence(etat.get("heure"))
@@ -547,7 +467,9 @@ def interface() -> None:
             except Exception:
                 pass
             etat["fen_act"] = None
-        statut("✔ Abonnement activé", "green")   # pas de fenêtre à fermer
+        statut("✔ Abonnement activé", "green")
+        if not etat["derniers"] and v_auto.get():      # 1re activation : la météo arrive tout de suite
+            lancer(manuel=False)
 
     def activer_code(nom: str, code: str, parent=None) -> bool:
         """Code préparé (10 caractères) : vérifié, lié à ce PC, puis enregistré chiffré."""
@@ -565,7 +487,7 @@ def interface() -> None:
         if etat.get("fen_act") is not None:
             etat["fen_act"].lift(); return
         w = tk.Toplevel(root); etat["fen_act"] = w
-        w.title("Activer l'abonnement"); w.transient(root); w.resizable(False, False)
+        w.title("Activer l'abonnement"); w.transient(fenetre()); w.resizable(False, False)
         w.protocol("WM_DELETE_WINDOW", lambda: (w.destroy(), etat.update(fen_act=None)))
         F = ("Segoe UI", 11)
         tk.Label(w, text=MARQUE, font=("Segoe UI", 15, "bold"), fg=BLEU).pack(pady=(12, 0))
@@ -620,10 +542,8 @@ def interface() -> None:
                   relief="flat", padx=36, pady=6, cursor="hand2").pack(pady=(16, 6))
         tk.Label(w, text=f"Pas de code ? {TELEPHONES}", font=("Segoe UI", 9), fg="#666").pack(pady=(0, 12))
 
-    btn_act.config(command=fenetre_activation)
-
     def a_propos(_e=None):
-        a = tk.Toplevel(root); a.title("À propos"); a.transient(root); a.resizable(False, False)
+        a = tk.Toplevel(root); a.title("À propos"); a.transient(fenetre()); a.resizable(False, False)
         cad = tk.Frame(a, bg="white"); cad.pack(fill="both", expand=True)
         try:
             try:
@@ -637,9 +557,10 @@ def interface() -> None:
         tk.Label(cad, text="Météo Marine Tunisie", font=("Segoe UI", 16, "bold"), fg=BLEU, bg="white").pack()
         tk.Label(cad, text=f"Version {version_texte()[1:]}", font=("Segoe UI", 10), fg="#555", bg="white").pack()
         tk.Frame(cad, height=2, width=260, bg=BLEU).pack(pady=10)
-        for t in ("Prévisions vent et vagues sur 16 jours",
+        for t in ("Prévisions vent, vagues, courant et marée sur 16 jours",
                   "Côtes et haute mer tunisiennes (30°N–39°N / 7°E–14°E)",
-                  "Données : NOAA GFS 0.25° et GFS-Wave · Affichage : XyGrib"):
+                  "Données : NOAA GFS 0.25° et GFS-Wave · Copernicus Marine",
+                  "Affichage : ACIS MétéoNav (et XyGrib)"):
             tk.Label(cad, text=t, font=("Segoe UI", 9), fg="#333", bg="white").pack()
         tk.Label(cad, text=SIGNATURE[0].upper() + SIGNATURE[1:], font=("Segoe UI", 10, "italic"),
                  fg=BLEU, bg="white").pack(pady=(12, 0))
@@ -649,47 +570,130 @@ def interface() -> None:
                  fg="#888", bg="white").pack(pady=(10, 4))
         tk.Button(cad, text="Fermer", command=a.destroy, bg=BLEU, fg="white", relief="flat",
                   font=("Segoe UI", 10, "bold"), padx=24, pady=3).pack(pady=(4, 16))
-    centre.tag_bind(id_sign, "<Button-1>", a_propos)
-    centre.tag_bind(id_sign, "<Enter>", lambda e: (centre.itemconfig(id_sign, fill=BLEU), centre.config(cursor="hand2")))
-    centre.tag_bind(id_sign, "<Leave>", lambda e: (centre.itemconfig(id_sign, fill="#8a90a8"), centre.config(cursor="")))
 
-    # ---------------- téléchargement
+    # ---------------- réglages
     def lire_ui() -> dict:
         try:
-            c.update(fermer=v_fermer.get(), garder=2 if v_garder.get() else 0)
-            c.update(vent=v_vent.get(), vagues=v_vag.get(), ouvrir=v_ouv.get(), fusion=True,
-                     jours=int(v_jours.get()), pas_h=int(v_pas.get()), dossier=v_dos.get(), xygrib=v_xy.get())
+            c.update(vent=v_vent.get(), vagues=v_vag.get(), maree=v_maree.get(), ouvrir=v_ouv.get(), fusion=True,
+                     jours=int(v_jours.get()), pas_h=int(v_pas.get()), dossier=v_dos.get(), xygrib=v_xy.get(),
+                     garder=2 if v_garder.get() else 0, auto_demarrage=v_auto.get(), fermer=False)
             sauver_config(c)
         except Exception:
             pass
         return c
 
-    def progression(i, n):
-        root.after(0, lambda: prog.config(maximum=n, value=i))
+    def ouvrir_dernier(parent=None):
+        cfg = lire_ui()
+        fichiers = etat["derniers"] or ([dernier_fichier(cfg["dossier"])] if dernier_fichier(cfg["dossier"]) else [])
+        if not fichiers:
+            f = filedialog.askopenfilename(initialdir=cfg["dossier"], parent=parent or fenetre(),
+                                           filetypes=[("GRIB", "*.grb2 *.grb *.grib2")])
+            fichiers = [f] if f else []
+        for f in fichiers:
+            log(ouvrir_dans_xygrib(f, cfg))
 
-    def lancer():
+    def parametres_programme(cadre, fen):
+        """Ancien menu de la première page, dans la fenêtre Paramètres de la carte (colonne de droite)."""
+        B = cadre.cget("bg")
+        opt = dict(bg=B, font=("Segoe UI", 10), anchor="w", activebackground=B)
+
+        def titre(t, haut=10):
+            tk.Label(cadre, text=t, bg=B, fg=BLEU, font=("Segoe UI", 11, "bold"), anchor="w").pack(fill="x", pady=(haut, 2))
+
+        def ligne():
+            fr = tk.Frame(cadre, bg=B); fr.pack(fill="x", pady=1); return fr
+        titre("Téléchargement", 0)
+        l1 = ligne()
+        for t, v in (("Vent + rafales", v_vent), ("Vagues", v_vag), ("Marée", v_maree)):
+            tk.Checkbutton(l1, text=t, variable=v, command=lire_ui, **opt).pack(side="left", padx=(0, 8))
+        l2 = ligne()
+        tk.Label(l2, text="Durée (jours) :", **opt).pack(side="left")
+        cb = ttk.Combobox(l2, textvariable=v_jours, values=["3", "5", "7", "10", "16"], width=4, state="readonly")
+        cb.pack(side="left", padx=(4, 14)); cb.bind("<<ComboboxSelected>>", lambda e: lire_ui())
+        tk.Label(l2, text="Pas 5 premiers jours (h) :", **opt).pack(side="left")
+        cb = ttk.Combobox(l2, textvariable=v_pas, values=["1", "3", "6"], width=3, state="readonly")
+        cb.pack(side="left", padx=4); cb.bind("<<ComboboxSelected>>", lambda e: lire_ui())
+        tk.Checkbutton(cadre, text="Télécharger la météo à l'ouverture du programme", variable=v_auto,
+                       command=lire_ui, **opt).pack(fill="x")
+        tk.Checkbutton(cadre, text="Effacer l'historique (garder les 2 derniers téléchargements)",
+                       variable=v_garder, command=lire_ui, **opt).pack(fill="x")
+        l3 = ligne()
+        tk.Label(l3, text="Dossier :", **opt).pack(side="left")
+        ttk.Entry(l3, textvariable=v_dos, width=36).pack(side="left", fill="x", expand=True, padx=4)
+
+        def choisir_dossier():
+            d = filedialog.askdirectory(initialdir=v_dos.get(), parent=fen)
+            if d: v_dos.set(d); lire_ui()
+        ttk.Button(l3, text="…", width=3, command=choisir_dossier).pack(side="left")
+
+        titre("XyGrib")
+        l4 = ligne()
+        tk.Label(l4, text="XyGrib :", **opt).pack(side="left")
+        ttk.Entry(l4, textvariable=v_xy, width=36).pack(side="left", fill="x", expand=True, padx=4)
+
+        def choisir_xy():
+            f = filedialog.askopenfilename(title="Emplacement de XyGrib.exe", parent=fen)
+            if f: v_xy.set(f); lire_ui()
+        ttk.Button(l4, text="…", width=3, command=choisir_xy).pack(side="left")
+        l5 = ligne()
+        tk.Checkbutton(l5, text="Ouvrir aussi dans XyGrib après « Télécharger »", variable=v_ouv,
+                       command=lire_ui, **opt).pack(side="left")
+        ttk.Button(cadre, text="Ouvrir la météo dans XyGrib", command=lambda: ouvrir_dernier(fen)).pack(anchor="w", pady=(2, 0))
+
+        titre("Abonnement")
+        lbl = tk.Label(cadre, text="", bg=B, font=("Segoe UI", 10, "bold"), anchor="w", justify="left", wraplength=420)
+        lbl.pack(fill="x")
+        etat["lbl_abo_param"] = lbl
+        l6 = ligne()
+        ttk.Button(l6, text="Activer / renouveler", command=fenetre_activation).pack(side="left")
+        ttk.Button(l6, text="À propos", command=a_propos).pack(side="left", padx=6)
+        tk.Label(cadre, text=f"Identifiant de ce PC : {licence.identifiant_machine()}", bg=B,
+                 font=("Consolas", 9), anchor="w").pack(fill="x", pady=(4, 0))
+        for ville, tel, num in AGENCES:
+            wa = tk.Label(cadre, text=f"✆ {ville} : {tel}  (WhatsApp)", bg=B, font=("Segoe UI", 9, "bold"),
+                          fg=VERT_WA, cursor="hand2", anchor="w")
+            wa.pack(fill="x")
+            wa.bind("<Button-1>", lambda e, n=num: webbrowser.open(lien_whatsapp(n)))
+
+        titre("Journal")
+        journal = tk.Text(cadre, height=5, width=56, font=("Consolas", 8))
+        journal.pack(fill="x")
+        journal.insert("end", "\n".join(etat["journal"]) + ("\n" if etat["journal"] else ""))
+        journal.see("end"); journal.config(state="disabled")
+        etat["txt_journal"] = journal
+        cadre.bind("<Destroy>", lambda e: lire_ui() if e.widget is cadre else None)
+        maj_licence(etat.get("heure"))
+
+    # ---------------- téléchargement
+    def lancer(manuel: bool = True):
+        if etat["en_cours"]:
+            return
         cfg = lire_ui()
         if not (cfg["vent"] or cfg["vagues"]):
-            messagebox.showwarning("Météo Marine", "Cochez au moins vent ou vagues (⚙ Paramètres)."); return
+            messagebox.showwarning("Météo Marine", "Cochez au moins vent ou vagues (drapeau → Paramètres).",
+                                   parent=fenetre()); return
         if not maj_licence(etat.get("heure")):
             fenetre_activation(); return
         etat["en_cours"] = True
-        btn_dl.config(state="disabled", text="  TÉLÉCHARGEMENT…", bg="#3a4a8f")
-        import time as _t
-        debut = _t.time()
+        if etat["carte"] is not None:
+            etat["carte"].en_cours(True)
+        if etat["attente"] is not None:
+            etat["attente"]["btn"].config(state="disabled", text="  TÉLÉCHARGEMENT…")
+        debut = time.time()
+        etape = {"nom": "", "t0": debut}
 
         def progression_eta(i, n):
             progression(i, n)
-            ecoule = _t.time() - etape["t0"]
+            ecoule = time.time() - etape["t0"]
             reste = ecoule / max(i, 1) * (n - i)
-            statut(f"{etape['nom']} : {i}/{n}  —  encore environ {int(reste) + 1} s")
-        etape = {"nom": "", "t0": debut}
+            statut(f"{etape['nom'] or 'Téléchargement'} : {i}/{n} — encore environ {int(reste) + 1} s")
 
         def travail():
             try:
                 statut("Vérification de la date et de l'abonnement…")
                 h = heure.heure_internet()
                 etat["heure"] = h
+                root.after(0, lambda: etat["carte"] is not None and etat["carte"].regler_heure(h))
                 controle_licence(h)
                 statut("Recherche des dernières prévisions…")
                 tel = gd.Telechargeur(h, log=log, progression=progression_eta); etat["tel"] = tel
@@ -700,105 +704,137 @@ def interface() -> None:
                     if m.startswith("Fichier météo préparé"):
                         statut("Téléchargement des prévisions préparées…")
                     elif m.startswith(("Courants", "Marée")):
-                        statut("Téléchargement des courants…")
+                        statut("Téléchargement des courants et de la marée…")
                     if m.startswith(("Vent", "Vagues")):
                         etape["nom"] = m.split(" :")[0].split(" (")[0]
-                        etape["t0"] = _t.time()
+                        etape["t0"] = time.time()
                 tel.log = log2
                 fichiers = executer(cfg, tel)
                 etat["derniers"] = fichiers
                 rp = getattr(tel, "run_publie", None)
-                info_run = (f"prévision NOAA du {rp:%d/%m} {rp.hour:02d} h UTC ({(rp.hour + 1) % 24:02d} h Tunis)"
-                            if rp else os.path.basename(fichiers[-1]))
-                statut(f"✔ Terminé en {int(_t.time() - debut)} s  —  {info_run}", "green")
-                if cfg["ouvrir"]:
-                    ouvert = False
+                info_run = (f" · NOAA du {rp:%d/%m} {(rp.hour + 1) % 24:02d} h" if rp else "")
+                statut(f"✔ Météo à jour{info_run}", "green")
+                if fichiers:
+                    root.after(0, lambda: afficher(fichiers[-1]))
+                if manuel and cfg["ouvrir"] and trouver_xygrib(cfg):
                     for f in fichiers:
-                        m = ouvrir_dans_xygrib(f, cfg)
-                        log(m)
-                        ouvert = ouvert or m.startswith("Ouverture dans XyGrib")
-                    if not ouvert and not trouver_xygrib(cfg) and fichiers:   # pas de XyGrib : ACIS MétéoNav
-                        root.after(0, lambda: ouvrir_carte(fichiers[-1]))
-                    if ouvert and cfg.get("fermer", True):
-                        statut("✔ Ouvert dans XyGrib — fermeture…", "green")
-                        root.after(2000, root.destroy)   # la fenêtre disparaît, XyGrib reste ouvert
+                        log(ouvrir_dans_xygrib(f, cfg))
             except licence.LicenceInvalide as e:
                 statut(f"Licence : {e}", "red")
             except Exception as e:
                 log(f"ERREUR : {e}")
-                statut("✖ Échec : vérifiez la connexion Internet (détails dans ⚙ Paramètres)", "red")
+                statut("✖ Échec du téléchargement : vérifiez la connexion Internet (détails : drapeau → Paramètres)",
+                       "red")
             finally:
                 etat["en_cours"] = False
 
                 def fin():
-                    btn_dl.config(text="  TÉLÉCHARGER LA MÉTÉO")
+                    if etat["carte"] is not None:
+                        etat["carte"].en_cours(False)
+                    if etat["attente"] is not None:
+                        etat["attente"]["btn"].config(state="normal", text="  TÉLÉCHARGER LA MÉTÉO")
                     maj_licence(etat["heure"])
                 root.after(0, fin)
         threading.Thread(target=travail, daemon=True).start()
-    btn_dl.config(command=lancer)
 
-    def ouvrir_dernier():
-        cfg = lire_ui()
-        if etat["derniers"]:
-            for f in etat["derniers"]:
-                log(ouvrir_dans_xygrib(f, cfg))
-        else:
-            f = filedialog.askopenfilename(initialdir=cfg["dossier"], filetypes=[("GRIB", "*.grb2 *.grb *.grib2")])
-            if f: log(ouvrir_dans_xygrib(f, cfg))
-    btn_ouvrir.config(command=ouvrir_dernier)
+    # ---------------- carte (fenêtre principale) et écran d'attente
+    hote = {"telecharger": lambda: lancer(True), "abonnement": abonnement, "activer": fenetre_activation,
+            "parametres": parametres_programme, "quitter": root.destroy}
 
-    def ouvrir_carte(f: str = None):
-        """ACIS MétéoNav (visionneuse intégrée) : même fichier que XyGrib, réservée aux abonnés."""
-        cfg = lire_ui()
-        if not maj_licence(etat.get("heure")):
-            fenetre_activation(); return
-        if not f:
-            f = etat["derniers"][-1] if etat["derniers"] else None
-        if not f or not os.path.exists(f):
-            import glob
-            tous = sorted(glob.glob(os.path.join(cfg["dossier"], "Tunisie_complet_*.grb2")), key=os.path.getmtime)
-            f = tous[-1] if tous else filedialog.askopenfilename(initialdir=cfg["dossier"],
-                                                                  filetypes=[("GRIB", "*.grb2 *.grb *.grib2")])
-        if not f:
-            messagebox.showinfo("ACIS MétéoNav", "Téléchargez d'abord la météo."); return
-        statut("Ouverture d’ACIS MétéoNav…")
-        root.update_idletasks()
+    def afficher(f: str) -> bool:
+        """Montre le fichier météo dans la carte (ouverte si besoin)."""
+        if etat["carte"] is not None:
+            try:
+                etat["carte"].charger(f)
+                return True
+            except Exception as e:                     # noqa: BLE001
+                log(f"ACIS MétéoNav : {e}")
+                statut("✖ Fichier météo illisible", "red")
+                return False
         try:
-            import visionneuse                     # importée ici : un souci de la carte ne gêne jamais le reste
-            visionneuse.ouvrir(f, parent=root, version=version_texte(), maintenant=etat.get("heure"))
-            statut(f"✔ Carte ouverte : {os.path.basename(f)}", "green")
-        except Exception as e:                     # noqa: BLE001
+            import visionneuse                         # importée ici : un souci de la carte ne bloque pas le reste
+            v = visionneuse.ouvrir(f, parent=root, version=version_texte(), maintenant=etat.get("heure"), hote=hote)
+        except Exception as e:                         # noqa: BLE001
             log(f"ACIS MétéoNav : {e}")
-            statut("✖ Carte indisponible : utilisez XyGrib", "red")
-    btn_carte.config(command=ouvrir_carte)
+            if etat["attente"] is None:
+                ecran_attente()
+            statut("✖ Carte indisponible : drapeau → Paramètres → « Ouvrir la météo dans XyGrib »", "red")
+            return False
+        etat["carte"] = v
+        if etat["attente"] is not None:
+            etat["attente"]["win"].destroy()
+            etat["attente"] = None
+        return True
+
+    def ecran_attente():
+        """1er lancement (aucun fichier météo) : en attendant le 1er téléchargement."""
+        w = tk.Toplevel(root)
+        w.title(f"Météo Marine Tunisie — {MARQUE}")
+        w.protocol("WM_DELETE_WINDOW", root.destroy)
+        sl, sh = w.winfo_screenwidth(), w.winfo_screenheight()
+        haut = min(470, sh - 120)
+        w.geometry(f"560x{haut}+{max(0, (sl - 560) // 2)}+{max(0, (sh - 70 - haut) // 2)}")
+        pied = tk.Frame(w, bg=BLEU); pied.pack(side="bottom", fill="x")
+        tk.Label(pied, text=f"{MARQUE}  •  {TELEPHONES}", bg=BLEU, fg="white",
+                 font=("Segoe UI", 9, "bold")).pack(pady=4)
+        try:
+            try:
+                img = tk.PhotoImage(file=ressource("logo_144.png"))
+            except Exception:
+                img = tk.PhotoImage(file=ressource("logo_96.png"))
+            w._img = img
+            tk.Label(w, image=img).pack(pady=(14, 2))
+        except Exception:
+            tk.Label(w, text=MARQUE.upper(), font=("Segoe UI", 18, "bold"), fg=BLEU).pack(pady=(20, 2))
+        tk.Label(w, text="ACIS MétéoNav — Météo Marine Tunisie", font=("Segoe UI", 11, "bold"), fg=BLEU).pack()
+        abo = tk.Label(w, text="", font=("Segoe UI", 10, "bold"), justify="center")
+        abo.pack(pady=(8, 6))
+        btn = tk.Button(w, text="  TÉLÉCHARGER LA MÉTÉO", command=lambda: lancer(True), font=("Segoe UI", 15, "bold"),
+                        bg=BLEU, fg="white", activebackground="#2c3a85", activeforeground="white",
+                        disabledforeground="#c8c8c8", relief="flat", padx=18, pady=7, cursor="hand2")
+
+        btn.pack(pady=4)
+        st = tk.Label(w, text="", font=("Segoe UI", 10), fg="#333", wraplength=520, justify="center")
+        st.pack(pady=(6, 2))
+        barre = ttk.Progressbar(w, mode="determinate", length=380)
+        barre.pack(pady=2)
+        act = tk.Frame(w); act.pack(pady=8)
+        ttk.Button(act, text="Activer / renouveler", command=fenetre_activation).pack(side="left", padx=4)
+
+        def parametres():
+            p = tk.Toplevel(w); p.title("Paramètres — Météo Marine Tunisie"); p.transient(w); p.resizable(False, False)
+            cad = tk.Frame(p, bg="#f7f8fc", padx=14, pady=10); cad.pack(fill="both", expand=True)
+            parametres_programme(cad, p)
+            tk.Button(p, text="✔ Fermer", command=p.destroy, bg=BLEU, fg="white", relief="flat",
+                      font=("Segoe UI", 11, "bold"), pady=4).pack(fill="x", padx=14, pady=(0, 12))
+        ttk.Button(act, text="⚙ Paramètres", command=parametres).pack(side="left", padx=4)
+        etat["attente"] = {"win": w, "abo": abo, "btn": btn, "statut": st, "barre": barre}
 
     # ---------------- démarrage
+    f0 = dernier_fichier(c["dossier"])
+    if not (f0 and afficher(f0)) and etat["attente"] is None:
+        ecran_attente()
     if not maj_licence():
         root.after(300, fenetre_activation)
-    if not trouver_xygrib(c):
-        def proposer_xygrib():
-            url = "https://opengribs.org/fr/xygrib"
-            if messagebox.askyesno("XyGrib", "XyGrib n'est pas installé sur ce PC.\n"
-                                             "Ouvrir la page de téléchargement (gratuit) ?"):
-                ok = False
-                try:
-                    ok = webbrowser.open(url)
-                except Exception:
-                    pass
-                if not ok:
-                    messagebox.showinfo("XyGrib", "Pas de navigateur sur ce PC.\nInstallez XyGrib depuis une "
-                                                  f"clé USB (installateur téléchargé sur un autre PC) :\n{url}")
-        root.after(1500, proposer_xygrib)
     if "--installe" in sys.argv:
         statut("✔ Installé : raccourci « Météo Marine Tunisie » créé sur le Bureau", "green")
+    elif not f0:
+        statut("Préparation du premier téléchargement…")
 
     def heure_au_demarrage():
         try:
             h = heure.heure_internet()
             etat["heure"] = h
-            root.after(0, lambda: maj_licence(h))
+
+            def suite():
+                if etat["carte"] is not None:
+                    etat["carte"].regler_heure(h)
+                if maj_licence(h) and v_auto.get():        # la météo se met à jour seule à l'ouverture
+                    lancer(manuel=False)
+            root.after(0, suite)
         except Exception:
             log("Pas de connexion Internet : la licence sera vérifiée au téléchargement.")
+            statut("Pas de connexion Internet : météo du dernier téléchargement", "red")
     threading.Thread(target=heure_au_demarrage, daemon=True).start()
     maj_en_ligne.lancer_en_fond(log=log)          # nouvelle version du programme ? (prochain lancement)
     root.mainloop()

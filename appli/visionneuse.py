@@ -642,10 +642,15 @@ def marges(precision: dict) -> dict:
 
 # ------------------------------------------------------------------ fenêtre
 class Visionneuse:
-    def __init__(self, chemin: str, parent=None, titre_extra: str = "", version: str = "", maintenant=None):
+    def __init__(self, chemin: str, parent=None, titre_extra: str = "", version: str = "", maintenant=None,
+                 hote: dict = None):
+        """hote (programme principal) : {"telecharger": f(), "abonnement": f() -> (nom, détail, couleur),
+        "activer": f(), "parametres": f(cadre, fenêtre), "quitter": f()} — la carte devient la fenêtre principale."""
         import tkinter as tk
         from tkinter import ttk
         self.tk = tk
+        self.ttk = ttk
+        self.hote = hote or {}
         self.d = Donnees(chemin)
         self.terres, self.frontieres = lire_cotes()
         self.precision, self.marges = {}, {}
@@ -694,30 +699,25 @@ class Visionneuse:
         self.cv_lune.bind("<Enter>", lambda e: self._survol_lune(True))
         self.cv_lune.bind("<Leave>", lambda e: self._survol_lune(False))
         tk.Label(haut, text="ACIS MétéoNav", bg=BLEU, fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(6, 12))
-        for nom, (lib, *_r) in COUCHES.items():
-            if nom == "rafales" and not any("GUST" in self.d.par[e] for e in self.d.echeances[:3]):
-                continue
-            if nom in ("pluie", "nuages") and not any(("PRATE" if nom == "pluie" else "TCDC") in self.d.par[e]
-                                                       for e in self.d.echeances[:6]):
-                continue
-            if nom == "courant" and not self.d.courants:
-                continue
-            if nom == "maree" and not self.d.maree:
-                continue
-            tk.Radiobutton(haut, text=lib, value=nom, variable=self.couche, indicatoron=False, command=self.dessiner,
-                           bg="#2c3a85", fg="white", selectcolor="#f6b400", activebackground="#3b4aa0",
-                           font=("Segoe UI", 9, "bold"), padx=8, pady=2, relief="flat",
-                           offrelief="flat").pack(side="left", padx=1, pady=4)
+        self.cadre_couches = tk.Frame(haut, bg=BLEU)
+        self.cadre_couches.pack(side="left")
+        self._boutons_couches()
         self.cb_marge = None                       # « Valeurs » et « Marge de sécurité » : dans Paramètres (drapeau)
         self.texte_marge = "Marge de sécurité sur les vents forts"
         drapeau = tk.Canvas(haut, width=50, height=34, bg=BLEU, highlightthickness=0, cursor="hand2")
-        drapeau.pack(side="right", padx=(16, 10), pady=2)            # isolé, en haut à droite
+        drapeau.pack(side="right", padx=(12, 10), pady=2)            # isolé, en haut à droite
         dessiner_drapeau_tunisie(drapeau, 1, 1, 48, 32)
         drapeau.bind("<Button-1>", lambda e: self.ouvrir_parametres())   # le drapeau ouvre les paramètres
-        self.zone = ttk.Combobox(haut, values=[z[0] for z in ZONES], state="readonly", width=26)
+        self.zone = ttk.Combobox(haut, values=[z[0] for z in ZONES], state="readonly", width=22 if hote else 26)
         self.zone.set(ZONES[0][0])
         self.zone.pack(side="right", padx=6)
         self.zone.bind("<<ComboboxSelected>>", self._zone)
+        self.lbl_abo = self.btn_dl = None
+        if self.hote:                              # programme : bouton Télécharger (toujours là)
+            self.btn_dl = tk.Button(haut, text="⬇ Télécharger", command=lambda: self.hote["telecharger"](),
+                                    font=("Segoe UI", 9, "bold"), bg="#f6b400", fg=BLEU, activebackground="#ffd166",
+                                    relief="flat", padx=8, cursor="hand2")
+            self.btn_dl.pack(side="right", padx=4, pady=4)
 
         bas = tk.Frame(w, bg="#eef0f6")
         bas.pack(side="bottom", fill="x")
@@ -737,6 +737,10 @@ class Visionneuse:
         self.lbl_info.pack(side="left", padx=8, pady=3)
         tk.Label(pied, text=f"Météo Marine Tunisie · {version or 'v1.2026'} · créé par Claude @ A.C.I.S",
                  bg=BLEU, fg="#c9d2ff", font=("Segoe UI", 8, "italic")).pack(side="right", padx=8)
+        # téléchargement en cours (programme) : texte + barre de progression
+        self.lbl_statut = tk.Label(pied, text="", bg=BLEU, fg="#ffd166", font=("Segoe UI", 9, "bold"))
+        self.lbl_statut.pack(side="left", padx=8)
+        self.barre = ttk.Progressbar(pied, mode="determinate", length=160)
 
         centre = tk.Frame(w)
         centre.pack(fill="both", expand=True)
@@ -747,15 +751,20 @@ class Visionneuse:
         tk.Label(droite, text="A.C.I.S Marine\nSfax 22 633 254 · Kélibia 94 596 447",
                  bg=BLEU, fg="white", font=("Segoe UI", 9, "bold"), justify="center",
                  pady=5).pack(side="bottom", fill="x")
-        tk.Label(droite, text="Données : NOAA GFS 0.25° et GFS-Wave · courants : Copernicus Marine",
+        tk.Label(droite, text="NOAA GFS · GFS-Wave · Copernicus Marine",
                  bg="#f7f8fc", fg="#6b7290", font=("Segoe UI", 7), wraplength=255,
                  justify="center").pack(side="bottom", fill="x", pady=(2, 3))
         cmd = tk.Frame(droite, bg="#f7f8fc")
         cmd.pack(side="bottom", fill="x", padx=8, pady=4)
         # date et heure Internet (tout en haut du panneau de droite)
         self.lbl_heure = tk.Label(droite, text="…", bg=BLEU, fg="white",
-                                  font=("Segoe UI", 12, "bold"), justify="center", pady=6)
+                                  font=("Segoe UI", 12, "bold"), justify="center", pady=6 if not hote else 3)
         self.lbl_heure.pack(side="top", fill="x")
+        if self.hote:                              # programme : nom du client et validité de l'abonnement
+            self.lbl_abo = tk.Label(droite, text="", bg=BLEU, fg="#7CFC9A", font=("Segoe UI", 9, "bold"),
+                                    justify="center", cursor="hand2", pady=3)
+            self.lbl_abo.pack(side="top", fill="x")
+            self.lbl_abo.bind("<Button-1>", lambda e: self.hote.get("activer", lambda: None)())
         gros = dict(font=("Segoe UI", 13, "bold"), bg=BLEU, fg="white", activebackground="#3b4aa0",
                     activeforeground="white", relief="flat", height=2, cursor="hand2")
         fleche = dict(gros, font=("Segoe UI Symbol", 20, "bold"), height=1)      # juste un grand triangle
@@ -822,8 +831,84 @@ class Visionneuse:
             threading.Thread(target=chercher, daemon=True).start()
             self.win.after(300, self._attendre_heure)
         self._heure_tick()
+        if self.hote:
+            self.win.protocol("WM_DELETE_WINDOW", lambda: self.hote.get("quitter", self.win.destroy)())
+            self.maj_abonnement()
+
+    # ---------------- boutons des couches (refaits quand un nouveau fichier est chargé)
+    def _boutons_couches(self):
+        tk = self.tk
+        for b in self.cadre_couches.winfo_children():
+            b.destroy()
+        for nom, (lib, *_r) in COUCHES.items():
+            if nom == "rafales" and not any("GUST" in self.d.par[e] for e in self.d.echeances[:3]):
+                continue
+            if nom in ("pluie", "nuages") and not any(("PRATE" if nom == "pluie" else "TCDC") in self.d.par[e]
+                                                       for e in self.d.echeances[:6]):
+                continue
+            if nom == "courant" and not self.d.courants:
+                continue
+            if nom == "maree" and not self.d.maree:
+                continue
+            tk.Radiobutton(self.cadre_couches, text=lib, value=nom, variable=self.couche, indicatoron=False,
+                           command=self.dessiner, bg="#2c3a85", fg="white", selectcolor="#f6b400",
+                           activebackground="#3b4aa0", font=("Segoe UI", 9, "bold"), padx=8, pady=2, relief="flat",
+                           offrelief="flat").pack(side="left", padx=1, pady=4)
+
+    # ---------------- liens avec le programme principal (hote)
+    def statut(self, texte: str, couleur: str = "#ffd166"):
+        """Message du programme (téléchargement…) dans la barre du bas. Appelé depuis le fil principal."""
+        self.lbl_statut.config(text=texte, fg=couleur)
+
+    def progression(self, i: int, n: int):
+        if n and i < n:
+            if not self.barre.winfo_ismapped():
+                self.barre.pack(side="left", padx=4, before=self.lbl_statut)
+            self.barre.config(maximum=n, value=i)
+        elif self.barre.winfo_ismapped():
+            self.barre.pack_forget()
+
+    def en_cours(self, oui: bool):
+        if self.btn_dl is not None:
+            self.btn_dl.config(state="disabled" if oui else "normal",
+                               text="⬇ Téléchargement…" if oui else "⬇ Télécharger")
+        if not oui:
+            self.progression(0, 0)
+
+    def maj_abonnement(self):
+        """Nom du client et validité de l'abonnement, en haut (fournis par le programme)."""
+        if self.lbl_abo is None or "abonnement" not in self.hote:
+            return
+        try:
+            nom, detail, couleur = self.hote["abonnement"]()
+        except Exception:                            # noqa: BLE001
+            return
+        self.lbl_abo.config(text=f"{nom}\n{detail}", fg=couleur)
+        self.win.title(f"ACIS MétéoNav — {nom} — Météo Marine Tunisie")
+
+    def charger(self, chemin: str):
+        """Nouveau fichier météo (après un téléchargement) : la carte se met à jour sans se fermer."""
+        d = Donnees(chemin)
+        self.d = d
+        self._img = self._img_cle = None
+        self._lune_cache = {}
+        self.curseur.config(to=max(0, len(d.echeances) - 1))
+        self._boutons_couches()
+        if self.d.grille(self.couche.get(), 0) is None:
+            self.couche.set("vent")
+        self.k = self._echeance_maintenant()
+        self.curseur.set(self.k)
+        self.dessiner()
+        self._ecrire_fiche()
 
     # ---------------- heure Internet (affichée au-dessus des flèches)
+    def regler_heure(self, h: dt.datetime):
+        """Heure Internet obtenue par le programme principal."""
+        h = h if h.tzinfo else h.replace(tzinfo=dt.timezone.utc)
+        self.heure_net, self.heure_net_mono = h, time.monotonic()
+        self.t0_heure, self.t0_pc = h, time.time()
+        self._heure_tick(boucle=False)
+
     def _attendre_heure(self):
         if not self._recu_heure:
             try:
@@ -862,10 +947,23 @@ class Visionneuse:
         f.configure(bg="#f7f8fc")
         f.resizable(False, False)
         f.transient(self.win)
-        tk.Label(f, text="⚙  Paramètres de la carte", bg=BLEU, fg="white", font=("Segoe UI", 12, "bold"),
+        tk.Label(f, text="⚙  Paramètres", bg=BLEU, fg="white", font=("Segoe UI", 12, "bold"),
                  pady=6).pack(fill="x")
-        corps = tk.Frame(f, bg="#f7f8fc", padx=14, pady=10)
-        corps.pack(fill="both")
+        colonnes = tk.Frame(f, bg="#f7f8fc")
+        colonnes.pack(fill="both")
+        corps = tk.Frame(colonnes, bg="#f7f8fc", padx=14, pady=10)
+        corps.pack(side="left", fill="both", anchor="n")
+        tk.Label(corps, text="Carte", bg="#f7f8fc", fg=BLEU, font=("Segoe UI", 11, "bold"),
+                 anchor="w").pack(fill="x", pady=(0, 4))
+        if "parametres" in self.hote:                # programme : téléchargement, abonnement, XyGrib…
+            tk.Frame(colonnes, bg="#c9cfe3", width=1).pack(side="left", fill="y", pady=10)
+            prog = tk.Frame(colonnes, bg="#f7f8fc", padx=14, pady=10)
+            prog.pack(side="left", fill="both", expand=True, anchor="n")
+            try:
+                self.hote["parametres"](prog, f)
+            except Exception as e:                   # noqa: BLE001
+                tk.Label(prog, text=f"Paramètres du programme indisponibles : {e}", bg="#f7f8fc",
+                         fg="#c0392b").pack()
         opt = dict(bg="#f7f8fc", font=("Segoe UI", 10), anchor="w", activebackground="#f7f8fc")
         tk.Checkbutton(corps, text="Afficher les valeurs (nœuds, mètres)", variable=self.chiffres,
                        command=self._reglage_change, **opt).pack(fill="x")
@@ -1523,13 +1621,12 @@ class Visionneuse:
                 f.insert("end", "hors de la période prévue\n", "g")
             else:
                 monte = serie[j] >= serie[i] if j > i else serie[i] >= serie[max(0, i - 1)]
-                f.insert("end", "Marée : ", ("b", "s"))
-                f.insert("end", f"{signe(ici)} m {'↑ montante' if monte else '↓ descendante'}\n", "s")
                 ex = extremes(serie, h0, h0 + 24)
                 amp = (max(e[1] for e in ex) - min(e[1] for e in ex)) if ex else 0
+                f.insert("end", "Marée : ", ("b", "s"))
+                f.insert("end", f"{signe(ici)} m {'↑ monte' if monte else '↓ baisse'}"
+                         + (f" · marnage {amp:.2f} m".replace(".", ",") if amp >= 0.06 else "") + "\n", "s")
                 f.insert("end", f"{tm}, {tm2}\n", "d")
-                if amp >= 0.06:
-                    f.insert("end", f"marnage du jour : {amp:.2f} m\n".replace(".", ","), "d")
                 t0m = self.d.maree_t0.timestamp()
                 if ex and amp >= 0.06:
                     morceaux = [f"{'PM' if e[2] else 'BM'} {hm(t0m + e[0] * 3600)} {signe(e[1])}" for e in ex]
@@ -1594,8 +1691,8 @@ class Visionneuse:
             la, lo = point
             f.insert("end", f"{dm(la, 'N', 'S')}   {dm(lo, 'E', 'O')}\n", "b")
             run = self.d.run + TUNISIE
-            f.insert("end", f"Météo prévue pour : {JOURS[t.weekday()]} {t:%d/%m} à {t:%H}h\n", "d")
-            f.insert("end", f"Fichier météo NOAA du : {JOURS[run.weekday()]} {run:%d/%m} à {run:%H}h\n", "d")
+            f.insert("end", f"Prévue pour {JOURS[t.weekday()]} {t:%d/%m} {t:%H}h · fichier NOAA du {run:%d/%m} {run:%H}h\n",
+                     "d")
             v = self.d.fiche(self.k, la, lo)
             if "vent" in v:
                 kt, de = v["vent"]
@@ -1634,10 +1731,11 @@ class Visionneuse:
         f.config(state="disabled")
 
 
-def ouvrir(chemin: str, parent=None, version: str = "", maintenant=None):
+def ouvrir(chemin: str, parent=None, version: str = "", maintenant=None, hote: dict = None):
     """Ouvre la carte (fenêtre secondaire si parent est donné). Renvoie la Visionneuse.
-    maintenant : heure Internet (datetime UTC) connue du programme, sinon None."""
-    return Visionneuse(chemin, parent=parent, version=version, maintenant=maintenant)
+    maintenant : heure Internet (datetime UTC) connue du programme, sinon None.
+    hote : liens avec le programme principal (voir Visionneuse) ; la carte est alors sa fenêtre principale."""
+    return Visionneuse(chemin, parent=parent, version=version, maintenant=maintenant, hote=hote)
 
 
 def principal() -> int:
