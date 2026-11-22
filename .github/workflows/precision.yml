@@ -1,0 +1,43 @@
+# Robot precision : a chaque nouveau run publie, archive la prevision de vent envoyee aux clients
+# et la compare aux releves reels de 7 aeroports cotiers (30 derniers jours). Aucun effet sur les clients.
+name: Precision meteo
+
+on:
+  schedule:
+    - cron: "45 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: precision
+  cancel-in-progress: false
+
+jobs:
+  precision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install certifi
+      - name: Archiver le run et comparer aux releves
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p verif
+          gh release download meteo -p run.txt -p Tunisie_1h.grb2 -D verif
+          gh release download verif -p previsions_archive.json -p precision.json -D verif 2>/dev/null || true
+          python verifier_precision.py verif
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f verif/rien_a_faire ]; then echo "Deja a jour"; exit 0; fi
+          gh release view verif >/dev/null 2>&1 || gh release create verif --title "Precision meteo" --notes "Precision du vent envoye aux clients, comparee aux releves de 7 aeroports cotiers (30 derniers jours). Lire precision.txt."
+          F="verif/previsions_archive.json"
+          [ -f verif/precision.txt ] && F="$F verif/precision.txt verif/precision.json"
+          gh release upload verif $F --clobber

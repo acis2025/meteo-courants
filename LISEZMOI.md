@@ -8,3 +8,11 @@ Il le publie à cette adresse :
 L'appli Android et le programme PC le téléchargent avec le vent et les vagues.
 
 Données : E.U. Copernicus Marine Service Information (MEDSEA_ANALYSISFORECAST_PHY_006_013).
+
+## Contrôle de la précision (automatique)
+
+Chaque heure (à :45), le robot « Précision météo » archive tout nouveau run du fichier `Tunisie_1h.grb2` envoyé aux clients. Il le compare ensuite aux relevés réels de 7 aéroports côtiers : Tabarka, Tunis, Enfidha, Monastir, Sfax, Gabès et Djerba (METAR, archive IEM). Les résultats portent sur les 30 derniers jours, par échéance de J+0 à J+6. Ils sont publiés ici :
+
+    https://github.com/acis2025/meteo-courants/releases/download/verif/precision.txt
+
+Rien n'est modifié dans les fichiers des clients. Script : `verifier_precision.py`.
