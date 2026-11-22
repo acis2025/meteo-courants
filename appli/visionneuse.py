@@ -879,7 +879,7 @@ class Visionneuse:
 
         centre = tk.Frame(w)
         centre.pack(fill="both", expand=True)
-        droite = tk.Frame(centre, bg="#f7f8fc", width=S(270))
+        droite = tk.Frame(centre, bg="#f7f8fc", width=S(330))
         droite.pack(side="right", fill="y")
         droite.pack_propagate(False)
         # bas du panneau : A.C.I.S (toujours en bas)
@@ -887,7 +887,7 @@ class Visionneuse:
                  bg=BLEU, fg="white", font=("Segoe UI", 9, "bold"), justify="center",
                  pady=5).pack(side="bottom", fill="x")
         tk.Label(droite, text="NOAA GFS · GFS-Wave · Copernicus Marine",
-                 bg="#f7f8fc", fg="#6b7290", font=("Segoe UI", 7), wraplength=S(255),
+                 bg="#f7f8fc", fg="#6b7290", font=("Segoe UI", 7), wraplength=S(315),
                  justify="center").pack(side="bottom", fill="x", pady=(2, 3))
         cmd = tk.Frame(droite, bg="#f7f8fc")
         cmd.pack(side="bottom", fill="x", padx=8, pady=4)
@@ -922,16 +922,16 @@ class Visionneuse:
         tk.Button(cmd, text="−  Zoom", command=lambda: self._zoomer(1 / 1.5, self.W / 2, self.H / 2), **gros).grid(row=2, column=1, sticky="ew", padx=(3, 0), pady=3)
         cmd.columnconfigure(0, weight=1, uniform="b")
         cmd.columnconfigure(1, weight=1, uniform="b")
-        self.fiche = tk.Text(droite, font=("Segoe UI", 9), bg="#f7f8fc", relief="flat", wrap="word",
+        self.fiche = tk.Text(droite, font=("Segoe UI", 11), bg="#f7f8fc", relief="flat", wrap="word",
                              padx=8, pady=4, cursor="arrow", exportselection=False, takefocus=0,
                              selectbackground="#f7f8fc", inactiveselectbackground="#f7f8fc",
                              selectforeground="#000000", highlightthickness=0)
         self.fiche.pack(side="top", fill="both", expand=True)
-        self.fiche.tag_configure("t", font=("Segoe UI", 12, "bold"), foreground=BLEU)
-        self.fiche.tag_configure("b", font=("Segoe UI", 9, "bold"))
-        self.fiche.tag_configure("m", font=("Segoe UI", 9, "bold"), foreground="#c0392b")
-        self.fiche.tag_configure("g", foreground="#6b7290", font=("Segoe UI", 8))
-        self.fiche.tag_configure("d", foreground=BLEU, font=("Segoe UI", 8))
+        self.fiche.tag_configure("t", font=("Segoe UI", 14, "bold"), foreground=BLEU)
+        self.fiche.tag_configure("b", font=("Segoe UI", 11, "bold"))
+        self.fiche.tag_configure("m", font=("Segoe UI", 11, "bold"), foreground="#c0392b")
+        self.fiche.tag_configure("g", foreground="#6b7290", font=("Segoe UI", 9))
+        self.fiche.tag_configure("d", foreground=BLEU, font=("Segoe UI", 9))
         self.fiche.tag_configure("s", spacing1=6)                  # petit espace avant une rubrique
         self.cv = tk.Canvas(centre, bg="#1a2046", highlightthickness=0, cursor="crosshair")
         self.cv.pack(side="left", fill="both", expand=True)
