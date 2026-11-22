@@ -15,6 +15,7 @@ Pour publier une modification :
 |---|---|
 | `serveur.py`, `parametres.html` | `android/src/meteomarinetn/` |
 | `donnees_carte.py`, `carte.html` | `carte/` |
+| `visionneuse.py` (carte A.C.I.S du programme PC) | racine |
 | les autres `.py` | racine |
 
 Jamais ici : clés, mots de passe, `cle_privee.pem`, `admin/`.

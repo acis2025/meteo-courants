@@ -418,6 +418,8 @@ def interface() -> None:
     id_act = centre.create_window(0, 0, window=actions)
     id_sign = centre.create_text(0, 0, text=f"Météo Marine Tunisie  ·  {version_texte()}  ·  {SIGNATURE}",
                                  font=("Segoe UI", 8, "italic"), fill="#8a90a8")
+    btn_carte = ttk.Button(actions, text="Carte A.C.I.S")
+    btn_carte.pack(side="left", padx=4)
     btn_ouvrir = ttk.Button(actions, text="Ouvrir dans XyGrib")
     btn_ouvrir.pack(side="left", padx=4)
     btn_act = ttk.Button(actions, text="Activer / renouveler")
@@ -715,6 +717,8 @@ def interface() -> None:
                         m = ouvrir_dans_xygrib(f, cfg)
                         log(m)
                         ouvert = ouvert or m.startswith("Ouverture dans XyGrib")
+                    if not ouvert and not trouver_xygrib(cfg) and fichiers:   # pas de XyGrib : la carte A.C.I.S
+                        root.after(0, lambda: ouvrir_carte(fichiers[-1]))
                     if ouvert and cfg.get("fermer", True):
                         statut("✔ Ouvert dans XyGrib — fermeture…", "green")
                         root.after(2000, root.destroy)   # la fenêtre disparaît, XyGrib reste ouvert
@@ -742,6 +746,31 @@ def interface() -> None:
             f = filedialog.askopenfilename(initialdir=cfg["dossier"], filetypes=[("GRIB", "*.grb2 *.grb *.grib2")])
             if f: log(ouvrir_dans_xygrib(f, cfg))
     btn_ouvrir.config(command=ouvrir_dernier)
+
+    def ouvrir_carte(f: str = None):
+        """Carte A.C.I.S (visionneuse intégrée) : même fichier que XyGrib, réservée aux abonnés."""
+        cfg = lire_ui()
+        if not maj_licence(etat.get("heure")):
+            fenetre_activation(); return
+        if not f:
+            f = etat["derniers"][-1] if etat["derniers"] else None
+        if not f or not os.path.exists(f):
+            import glob
+            tous = sorted(glob.glob(os.path.join(cfg["dossier"], "Tunisie_complet_*.grb2")), key=os.path.getmtime)
+            f = tous[-1] if tous else filedialog.askopenfilename(initialdir=cfg["dossier"],
+                                                                  filetypes=[("GRIB", "*.grb2 *.grb *.grib2")])
+        if not f:
+            messagebox.showinfo("Carte A.C.I.S", "Téléchargez d'abord la météo."); return
+        statut("Ouverture de la carte A.C.I.S…")
+        root.update_idletasks()
+        try:
+            import visionneuse                     # importée ici : un souci de la carte ne gêne jamais le reste
+            visionneuse.ouvrir(f, parent=root, version=version_texte(), maintenant=etat.get("heure"))
+            statut(f"✔ Carte ouverte : {os.path.basename(f)}", "green")
+        except Exception as e:                     # noqa: BLE001
+            log(f"Carte A.C.I.S : {e}")
+            statut("✖ Carte indisponible : utilisez XyGrib", "red")
+    btn_carte.config(command=ouvrir_carte)
 
     # ---------------- démarrage
     if not maj_licence():
