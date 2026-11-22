@@ -401,6 +401,8 @@ class Visionneuse:
         self.k = 0
         self.lecture = None
         self.repere = None
+        self.survol = None
+        self._survol_prevu = False
         self.vue = {"lat": 35.6, "lon": 10.8, "z": 1.0}
         self.W, self.H = 800, 500
         self._img = None
@@ -441,11 +443,6 @@ class Visionneuse:
         bas.pack(side="bottom", fill="x")
         ligne = tk.Frame(bas, bg="#eef0f6")
         ligne.pack(fill="x", padx=6, pady=(4, 0))
-        self.btn_lect = tk.Button(ligne, text="▶", width=3, command=self.basculer_lecture, bg=BLEU, fg="white",
-                                  relief="flat", font=("Segoe UI", 10, "bold"))
-        self.btn_lect.pack(side="left")
-        tk.Button(ligne, text="◀", width=2, command=lambda: self.aller(self.k - 1), relief="flat").pack(side="left", padx=(4, 0))
-        tk.Button(ligne, text="▶|", width=2, command=lambda: self.aller(self.k + 1), relief="flat").pack(side="left")
         self.lbl_date = tk.Label(ligne, text="", font=("Segoe UI", 11, "bold"), fg=BLEU, bg="#eef0f6", width=24, anchor="w")
         self.lbl_date.pack(side="left", padx=8)
         self.curseur = tk.Scale(ligne, from_=0, to=max(0, len(self.d.echeances) - 1), orient="horizontal",
@@ -463,11 +460,42 @@ class Visionneuse:
 
         centre = tk.Frame(w)
         centre.pack(fill="both", expand=True)
-        self.fiche = tk.Text(centre, width=34, font=("Segoe UI", 9), bg="#f7f8fc", relief="flat", wrap="word",
+        droite = tk.Frame(centre, bg="#f7f8fc", width=270)
+        droite.pack(side="right", fill="y")
+        droite.pack_propagate(False)
+        # bas du panneau : A.C.I.S (toujours en bas)
+        tk.Label(droite, text="A.C.I.S Marine\nSfax 22 633 254 · Kélibia 94 596 447",
+                 bg=BLEU, fg="white", font=("Segoe UI", 9, "bold"), justify="center",
+                 pady=5).pack(side="bottom", fill="x")
+        tk.Label(droite, text="Données : NOAA GFS 0.25° et GFS-Wave · courants : Copernicus Marine",
+                 bg="#f7f8fc", fg="#6b7290", font=("Segoe UI", 7), wraplength=255,
+                 justify="center").pack(side="bottom", fill="x", pady=(2, 3))
+        cmd = tk.Frame(droite, bg="#f7f8fc")
+        cmd.pack(side="bottom", fill="x", padx=8, pady=4)
+        gros = dict(font=("Segoe UI", 13, "bold"), bg=BLEU, fg="white", activebackground="#3b4aa0",
+                    activeforeground="white", relief="flat", height=2, cursor="hand2")
+        tk.Button(cmd, text="◀  Avant", command=lambda: self.avancer(-1), **gros).grid(row=0, column=0, sticky="ew", padx=(0, 3), pady=3)
+        tk.Button(cmd, text="Après  ▶", command=lambda: self.avancer(1), **gros).grid(row=0, column=1, sticky="ew", padx=(3, 0), pady=3)
+        pas = tk.Frame(cmd, bg="#f7f8fc")
+        pas.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        self.pas_h = tk.IntVar(value=1)
+        tk.Label(pas, text="Pas :", bg="#f7f8fc", font=("Segoe UI", 9, "bold"), fg=BLEU).pack(side="left")
+        for h in (1, 3):
+            tk.Radiobutton(pas, text=f"{h} h", value=h, variable=self.pas_h, indicatoron=False, width=4,
+                           font=("Segoe UI", 9, "bold"), bg="#dfe3f2", selectcolor="#f6b400",
+                           relief="flat", offrelief="flat").pack(side="left", padx=2)
+        self.btn_lect = tk.Button(pas, text="▶ Animation", command=self.basculer_lecture, font=("Segoe UI", 8),
+                                  bg="#dfe3f2", relief="flat", cursor="hand2")
+        self.btn_lect.pack(side="right")
+        tk.Button(cmd, text="+  Zoom", command=lambda: self._zoomer(1.5, self.W / 2, self.H / 2), **gros).grid(row=2, column=0, sticky="ew", padx=(0, 3), pady=3)
+        tk.Button(cmd, text="−  Zoom", command=lambda: self._zoomer(1 / 1.5, self.W / 2, self.H / 2), **gros).grid(row=2, column=1, sticky="ew", padx=(3, 0), pady=3)
+        cmd.columnconfigure(0, weight=1, uniform="b")
+        cmd.columnconfigure(1, weight=1, uniform="b")
+        self.fiche = tk.Text(droite, font=("Segoe UI", 10), bg="#f7f8fc", relief="flat", wrap="word",
                              padx=8, pady=6, cursor="arrow")
-        self.fiche.pack(side="right", fill="y")
-        self.fiche.tag_configure("t", font=("Segoe UI", 11, "bold"), foreground=BLEU)
-        self.fiche.tag_configure("b", font=("Segoe UI", 9, "bold"))
+        self.fiche.pack(side="top", fill="both", expand=True)
+        self.fiche.tag_configure("t", font=("Segoe UI", 12, "bold"), foreground=BLEU)
+        self.fiche.tag_configure("b", font=("Segoe UI", 10, "bold"))
         self.fiche.tag_configure("m", font=("Segoe UI", 9, "bold"), foreground="#c0392b")
         self.fiche.tag_configure("g", foreground="#6b7290", font=("Segoe UI", 8))
         self.cv = tk.Canvas(centre, bg="#1a2046", highlightthickness=0, cursor="crosshair")
@@ -476,11 +504,13 @@ class Visionneuse:
         self.cv.bind("<ButtonPress-1>", self._presse)
         self.cv.bind("<B1-Motion>", self._glisse)
         self.cv.bind("<ButtonRelease-1>", self._lache)
+        self.cv.bind("<Motion>", self._survol)
+        self.cv.bind("<Leave>", self._quitte)
         self.cv.bind("<MouseWheel>", self._molette)                  # Windows
         self.cv.bind("<Button-4>", lambda e: self._zoomer(1.25, e.x, e.y))   # Linux
         self.cv.bind("<Button-5>", lambda e: self._zoomer(0.8, e.x, e.y))
-        w.bind("<Left>", lambda e: self.aller(self.k - 1))
-        w.bind("<Right>", lambda e: self.aller(self.k + 1))
+        w.bind("<Left>", lambda e: self.avancer(-1))
+        w.bind("<Right>", lambda e: self.avancer(1))
         w.bind("<space>", lambda e: self.basculer_lecture())
 
         self.k = self._echeance_maintenant()
@@ -540,16 +570,31 @@ class Visionneuse:
         self.dessiner()
         self._ecrire_fiche()
 
+    def avancer(self, sens: int):
+        """Heure suivante / précédente selon le pas choisi (1 h ou 3 h)."""
+        cible = self.d.echeances[self.k] + sens * self.pas_h.get()
+        k = self.k
+        if sens > 0:
+            while k < len(self.d.echeances) - 1 and self.d.echeances[k] < cible:
+                k += 1
+        else:
+            while k > 0 and self.d.echeances[k] > cible:
+                k -= 1
+        self.aller(k)
+
     def basculer_lecture(self):
         if self.lecture:
             self.win.after_cancel(self.lecture)
             self.lecture = None
-            self.btn_lect.config(text="▶")
+            self.btn_lect.config(text="▶ Animation")
             return
-        self.btn_lect.config(text="■")
+        self.btn_lect.config(text="■ Arrêter")
 
         def pas():
-            self.aller(self.k + 1 if self.k < len(self.d.echeances) - 1 else 0)
+            if self.k >= len(self.d.echeances) - 1:
+                self.aller(0)
+            else:
+                self.avancer(1)
             self.lecture = self.win.after(700, pas)
         pas()
 
@@ -621,6 +666,23 @@ class Visionneuse:
         self.vue["lat"] = la + (e.y - y0) * cos / p
         self._borner()
         self.dessiner(rapide=True)
+
+    def _survol(self, e):
+        """Le curseur qui se déplace affiche la position et la météo du point survolé."""
+        if self._drag:
+            return
+        self.survol = self.geo(e.x, e.y)
+        if not self._survol_prevu:                  # au plus ~12 mises à jour par seconde
+            self._survol_prevu = True
+            self.win.after(80, self._survol_maj)
+
+    def _survol_maj(self):
+        self._survol_prevu = False
+        self._ecrire_fiche()
+
+    def _quitte(self, _e):
+        self.survol = None
+        self._ecrire_fiche()
 
     def _lache(self, e):
         bouge = self._drag and self._drag[4]
@@ -904,13 +966,14 @@ class Visionneuse:
         f.delete("1.0", "end")
         t = self.d.date(self.k) + TUNISIE
         f.insert("end", f"{JOURS[t.weekday()]} {t:%d/%m} à {t:%H}h\n", "t")
-        if not self.repere:
-            f.insert("end", "\nCliquez sur la carte pour voir la prévision détaillée d'un point.\n\n"
-                            "Molette : zoom · glisser : déplacer\n← → : heure précédente / suivante\n"
-                            "Espace : animation\n", "")
+        point = self.survol or self.repere
+        if not point:
+            f.insert("end", "\nPassez la souris sur la carte : la position et la météo du point s'affichent ici.\n"
+                            "Un clic garde le point marqué.\n", "g")
         else:
-            la, lo = self.repere
-            f.insert("end", f"{dm(la, 'N', 'S')}   {dm(lo, 'E', 'O')}\n\n", "g")
+            la, lo = point
+            f.insert("end", ("Curseur" if self.survol else "Point marqué") + "\n", "g")
+            f.insert("end", f"{dm(la, 'N', 'S')}   {dm(lo, 'E', 'O')}\n\n", "b")
             v = self.d.fiche(self.k, la, lo)
             if "vent" in v:
                 kt, de = v["vent"]
@@ -951,8 +1014,6 @@ class Visionneuse:
         else:
             f.insert("end", "Contrôle de la précision en cours : la marge de sécurité apparaîtra quand "
                             "assez de relevés réels seront comparés.\n", "g")
-        f.insert("end", "\nDonnées : NOAA GFS 0.25° et GFS-Wave · courants : Copernicus Marine\n"
-                        "A.C.I.S Marine · Sfax 22 633 254 · Kélibia 94 596 447\n", "g")
         f.config(state="disabled")
 
 
