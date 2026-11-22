@@ -1512,21 +1512,44 @@ class Visionneuse:
         except Exception:                            # noqa: BLE001
             return None
 
+    def _sources_logo(self) -> list:
+        """Où trouver le logo, dans l'ordre : logo.txt (PNG 256 px en base64, livré par la mise à jour en ligne
+        comme carte.html, ou rangé à côté du programme), puis les logo_*.png de ressources/."""
+        sources = []
+        try:
+            import maj_en_ligne
+            b = maj_en_ligne.ressource("logo.txt")
+            if b:
+                sources.append(("data", b.decode("ascii").strip()))
+        except Exception:                            # noqa: BLE001
+            pass
+        ici = os.path.dirname(os.path.abspath(__file__))
+        base = getattr(sys, "_MEIPASS", ici)
+        dossiers = (ici, os.path.join(ici, "ressources"), os.path.join(base, "ressources"),
+                    os.path.join(os.path.dirname(ici), "ressources"))
+        for d in dossiers:
+            p = os.path.join(d, "logo.txt")
+            if os.path.exists(p):
+                try:
+                    sources.append(("data", open(p, encoding="ascii").read().strip()))
+                except OSError:
+                    pass
+        for n in ("logo_256.png", "logo_144.png", "logo_96.png"):
+            for d in dossiers:
+                p = os.path.join(d, n)
+                if os.path.exists(p):
+                    sources.append(("file", p))
+        return sources
+
     def _logo_filigrane(self):
-        """Logo A.C.I.S (ressources/logo_256.png ou logo_144.png) éclairci vers la couleur de la terre ; None si absent."""
+        """Logo A.C.I.S (logo.txt, sinon logo_256/144/96.png) éclairci vers la couleur de la terre ; None si absent."""
         if hasattr(self, "_logo_fil"):
             return self._logo_fil
         self._logo_fil = None
-        ici = os.path.dirname(os.path.abspath(__file__))
-        base = getattr(sys, "_MEIPASS", ici)
-        for d in (ici, os.path.join(ici, "ressources"), os.path.join(base, "ressources"),
-                  os.path.join(os.path.dirname(ici), "ressources")):
-            for n in ("logo_256.png", "logo_144.png", "logo_96.png"):
-                p = os.path.join(d, n)
-                if not os.path.exists(p):
-                    continue
+        for genre, valeur in self._sources_logo():
+            for _une_fois in (1,):
                 try:
-                    src = self.tk.PhotoImage(file=p)
+                    src = self.tk.PhotoImage(data=valeur) if genre == "data" else self.tk.PhotoImage(file=valeur)
                     if src.width() >= 256:                   # 256 -> 192 px
                         src = src.zoom(3).subsample(4)
                     w, h = src.width(), src.height()
