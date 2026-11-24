@@ -1259,7 +1259,9 @@ if (CONFIG.suivi) {
     if (e.licence && !e.licence.ok) { location.href = (CONFIG.parametres || "/parametres") + "#activation"; return; }   // abonnement fini
     const p = e.progression;
     if (p.en_cours) { vu = true;
-      montrer(`<i>⟳</i> Nouvelles prévisions ${p.n ? Math.round(100 * p.i / p.n) + " %" : "…"}`); return; }
+      const pc = p.n ? Math.round(100 * p.i / p.n) + " %" : "…", noaa = /^(Vent|Vagues)/.test(p.etape || "");
+      montrer(noaa ? `<i>⟳</i> Nouvelles prévisions · ${p.etape} ${pc}<br><small>directement chez NOAA (plus long)</small>`
+                   : `<i>⟳</i> Nouvelles prévisions ${pc}`); return; }
     if (e.fichier && e.fichier !== S.fichier) { montrer("✔ Prévisions mises à jour"); garderEtat(); setTimeout(() => location.reload(), 500); return; }
     if (vu && p.erreur) { montrer("Mise à jour impossible : " + p.erreur, true); setTimeout(() => { pastille.style.display = "none"; }, 6000); vu = false; }
     else if (!p.erreur) pastille.style.display = "none";

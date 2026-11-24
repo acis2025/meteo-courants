@@ -155,11 +155,15 @@ async function etat() {
   return E;
 }
 
+let raisonNoaa = "";                     // pourquoi le robot n'a pas servi (gardé pendant tout le téléchargement direct)
 function afficher(p) {
   $("barre").style.display = "block";
   $("barre").firstChild.style.width = (p.n ? Math.round(100 * p.i / p.n) : 3) + "%";
-  $("msg").textContent = (p.etape || "Préparation…") + (p.n ? `  ${p.i}/${p.n}` : "") +
-    (p.message && /pause|essai|attente|erreur|indispon/i.test(p.message) ? " — " + p.message : "");
+  if (p.message && /robot indisponible|trop ancien|illisible/i.test(p.message)) raisonNoaa = p.message.trim();
+  const noaa = /^(Vent|Vagues)/.test(p.etape || "");
+  $("msg").textContent = (p.etape || "Préparation…") + (p.n ? (noaa ? `  ${p.i}/${p.n}` : `  ${Math.round(100 * p.i / p.n)} %`) : "") +
+    (p.message && /pause|essai|attente|erreur|indispon/i.test(p.message) ? " — " + p.message.trim() : "") +
+    (noaa ? " — directement chez NOAA (plus long)" + (raisonNoaa ? " · " + raisonNoaa : "") : "");
 }
 
 function suivre() {
