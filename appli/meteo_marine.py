@@ -678,6 +678,9 @@ def interface() -> None:
 
         def progression_eta(i, n):
             progression(i, n)
+            if not etape["nom"]:                       # fichier du robot : avancement en %
+                statut(f"Téléchargement des prévisions préparées : {int(100 * i / max(n, 1))} %")
+                return
             ecoule = _t.time() - etape["t0"]
             reste = ecoule / max(i, 1) * (n - i)
             statut(f"{etape['nom']} : {i}/{n}  —  encore environ {int(reste) + 1} s")
