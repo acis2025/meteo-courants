@@ -473,7 +473,7 @@ def fichier_robot(tel: "Telechargeur", dossier: str, jours: int, pas: int, coura
     tel.progression(90, 100)
     if courants:
         try:
-            fc = tel.courants(nom_fichier("courants", dossier, tel.heure))
+            fc = tel.courants(nom_provisoire("courants", dossier))
             if fc:
                 garde += garder_heures(open(fc, "rb").read(), heures)
                 os.remove(fc)
@@ -575,6 +575,12 @@ def telecharger_maree(tel: "Telechargeur", dossier: str) -> Optional[str]:
     except Exception as e:                          # noqa: BLE001
         tel.log(f"  marée non téléchargée : {e}")
         return None
+
+
+def nom_provisoire(prefixe: str, dossier: str) -> str:
+    """Morceau d'un fichier unique en cours de fabrication (jamais pris pour des prévisions)."""
+    os.makedirs(dossier, exist_ok=True)
+    return os.path.join(dossier, f"en_cours_{prefixe}.grb2")
 
 
 def nom_fichier(prefixe: str, dossier: str, heure: dt.datetime) -> str:
