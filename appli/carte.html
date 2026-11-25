@@ -1253,7 +1253,7 @@ if (CONFIG.suivi) {
   const pastille = document.getElementById("maj"), S = CONFIG.suivi;
   const montrer = (html, err) => { pastille.innerHTML = html; pastille.className = err ? "err" : ""; pastille.style.display = "block"; };
   fetch(S.maj, { method: "POST" }).catch(() => {});
-  let vu = false;
+  let vu = false, recharge = false;
   const tic = async () => {
     let e; try { e = await (await fetch(S.etat)).json(); } catch (x) { return; }
     if (e.licence && !e.licence.ok) { location.href = (CONFIG.parametres || "/parametres") + "#activation"; return; }   // abonnement fini
@@ -1262,7 +1262,11 @@ if (CONFIG.suivi) {
       const pc = p.n ? Math.round(100 * p.i / p.n) + " %" : "…", noaa = /^(Vent|Vagues)/.test(p.etape || "");
       montrer(noaa ? `<i>⟳</i> Nouvelles prévisions · ${p.etape} ${pc}<br><small>directement chez NOAA (plus long)</small>`
                    : `<i>⟳</i> Nouvelles prévisions ${pc}`); return; }
-    if (e.fichier && e.fichier !== S.fichier) { montrer("✔ Prévisions mises à jour"); garderEtat(); setTimeout(() => location.reload(), 500); return; }
+    if (e.fichier && e.fichier !== S.fichier) {    // UN seul rechargement : la carte est recalculée par le téléphone
+      montrer("✔ Prévisions mises à jour<br><small>chargement de la nouvelle carte…</small>");   // (chaque rechargement relancé
+      if (!recharge) { recharge = true; garderEtat(); setTimeout(() => location.reload(), 500);   //  la recalculait en parallèle)
+                       setTimeout(() => { recharge = false; }, 120000); }                        // filet : nouvel essai après 2 min
+      return; }
     if (vu && p.erreur) { montrer("Mise à jour impossible : " + p.erreur, true); setTimeout(() => { pastille.style.display = "none"; }, 6000); vu = false; }
     else if (!p.erreur) pastille.style.display = "none";
   };
