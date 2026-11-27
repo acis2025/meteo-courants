@@ -728,6 +728,103 @@ def marges(precision: dict) -> dict:
 
 
 # ------------------------------------------------------------------ bouton « Télécharger » (ancre + mot centré)
+class _Frise:
+    """Frise du temps (comme XyGrib) : les jours en clair (« ven. 27 »), les heures dessous, un trait par prévision,
+    le trait rouge = maintenant, le curseur jaune = l'heure affichée. Clic ou glisser pour changer d'heure."""
+
+    def __init__(self, parent, vis):
+        import tkinter as tk
+        self.vis = vis
+        self.k = 0
+        self.cv = tk.Canvas(parent, height=S(48), bg="#eef0f6", highlightthickness=0, cursor="hand2")
+        self.cv.bind("<Configure>", lambda e: self.dessiner())
+        self.cv.bind("<Button-1>", self._clic)
+        self.cv.bind("<B1-Motion>", self._clic)
+
+    def pack(self, **kw):
+        self.cv.pack(**kw)
+
+    def config(self, **_):                       # (compatibilité avec l'ancien curseur)
+        self.dessiner()
+
+    def set(self, k: int):
+        self.k = k
+        self.dessiner()
+
+    def _bornes(self):
+        d = self.vis.d
+        heures = [d.date(i) + TUNISIE for i in range(len(d.echeances))]
+        return heures, heures[0], heures[-1]
+
+    def _x(self, t, t0, t1):
+        g, dr = S(12), max(S(13), self.cv.winfo_width() - S(12))
+        tot = (t1 - t0).total_seconds() or 1.0
+        return g + (dr - g) * (t - t0).total_seconds() / tot
+
+    def _clic(self, e):
+        if self.vis.d.vide:
+            return
+        heures, t0, t1 = self._bornes()
+        k = min(range(len(heures)), key=lambda i: abs(self._x(heures[i], t0, t1) - e.x))
+        if k != self.k:
+            self.vis.aller(k)
+
+    def dessiner(self):
+        cv = self.cv
+        cv.delete("all")
+        L = cv.winfo_width()
+        if L < S(60):
+            return
+        haut, bas = S(19), S(31)                     # la bande des jours
+        if self.vis.d.vide or len(self.vis.d.echeances) < 2:
+            cv.create_rectangle(S(12), haut, L - S(12), bas, fill="#dfe3f2", outline="")
+            cv.create_text(L / 2, (haut + bas) / 2, text="Pas encore de météo", fill="#6b7290",
+                           font=("Segoe UI", 9, "bold"))
+            return
+        heures, t0, t1 = self._bornes()
+        # jours : bandes alternées, nom du jour au-dessus, heures dessous
+        jour = t0.replace(hour=0, minute=0, second=0, microsecond=0)
+        n = 0
+        while jour <= t1:
+            fin = jour + dt.timedelta(days=1)
+            xa, xb = self._x(max(jour, t0), t0, t1), self._x(min(fin, t1), t0, t1)
+            cv.create_rectangle(xa, haut, xb, bas, fill="#d3d9ee" if n % 2 else "#e6e9f5", outline="")
+            if jour > t0:
+                cv.create_line(xa, S(2), xa, bas + S(4), fill="#8a90a8")
+            largeur = xb - xa
+            if largeur >= S(46):
+                txt = f"{JOURS[jour.weekday()]} {jour.day}"
+            elif largeur >= S(20):
+                txt = f"{jour.day}"
+            else:
+                txt = ""
+            if txt:
+                cv.create_text((xa + xb) / 2, S(10), text=txt, fill=BLEU, font=("Segoe UI", 9, "bold"))
+            pas = 6 if largeur >= S(110) else (12 if largeur >= S(60) else 0)
+            if pas:
+                for h in range(pas, 24, pas):
+                    t = jour + dt.timedelta(hours=h)
+                    if t0 <= t <= t1:
+                        x = self._x(t, t0, t1)
+                        cv.create_text(x, S(41), text=f"{h:02d}h", fill="#6b7290", font=("Segoe UI", 7))
+            jour, n = fin, n + 1
+        # un petit trait par prévision disponible
+        for t in heures:
+            x = self._x(t, t0, t1)
+            cv.create_line(x, bas - S(4), x, bas, fill="#8a90a8")
+        # maintenant (heure Internet) : trait rouge
+        h = self.vis.maintenant()
+        if h is not None:
+            hn = h + TUNISIE
+            if t0 <= hn <= t1:
+                x = self._x(hn, t0, t1)
+                cv.create_line(x, haut - S(3), x, bas + S(3), fill="#e70013", width=max(2, S(2)))
+        # heure affichée : curseur jaune
+        x = self._x(heures[min(self.k, len(heures) - 1)], t0, t1)
+        cv.create_rectangle(x - S(4), haut - S(5), x + S(4), bas + S(5), fill="#f6b400", outline=BLEU,
+                            width=max(1, S(1)))
+
+
 ROUGE_BOUTON = "#e70013"                                  # rouge du drapeau tunisien
 
 
@@ -868,9 +965,7 @@ class Visionneuse:
         ligne.pack(fill="x", padx=6, pady=(4, 0))
         self.lbl_date = tk.Label(ligne, text="", font=("Segoe UI", 11, "bold"), fg=BLEU, bg="#eef0f6", width=24, anchor="w")
         self.lbl_date.pack(side="left", padx=8)
-        self.curseur = tk.Scale(ligne, from_=0, to=max(0, len(self.d.echeances) - 1), orient="horizontal",
-                                showvalue=False, command=lambda v: self.aller(int(float(v)), depuis_curseur=True),
-                                bg="#eef0f6", highlightthickness=0, troughcolor="#c9cfe3", sliderlength=S(18))
+        self.curseur = _Frise(ligne, self)          # frise du temps : jours et heures, comme XyGrib
         self.curseur.pack(side="left", fill="x", expand=True)
         self.legende = tk.Canvas(bas, height=S(30), bg="#eef0f6", highlightthickness=0)
         self.legende.pack(fill="x", padx=6)
