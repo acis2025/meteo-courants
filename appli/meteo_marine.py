@@ -292,14 +292,19 @@ def auto_installation() -> bool:
 # =========================================================================== interface
 def fichiers_meteo(dossier: str) -> list:
     """Fichiers météo téléchargés, du plus récent au plus ancien (date écrite dans le nom = date Internet).
-    Les fichiers complets passent avant tout : un morceau « vent seul » ne doit jamais être pris pour la météo."""
-    import glob
+    Les fichiers complets passent avant tout : un morceau « vent seul » ne doit jamais être pris pour la météo.
+    (os.listdir et non glob : règle 5, aucun module que les anciens exe n'ont pas)"""
     import re
     complets, autres = [], []
-    for f in glob.glob(os.path.join(dossier, "Tunisie_*.grb2")):
-        m = re.search(r"_(\d{8}_\d{4})\.grb2$", f)
+    try:
+        noms = os.listdir(dossier)
+    except OSError:
+        noms = []
+    for nom in noms:
+        m = re.match(r"Tunisie_\w+?_(\d{8}_\d{4})\.grb2$", nom)
         if m:
-            (complets if "complet" in os.path.basename(f) else autres).append((m.group(1), f))
+            f = os.path.join(dossier, nom)
+            (complets if "complet" in nom else autres).append((m.group(1), f))
     return [t[1] for t in sorted(complets, reverse=True)] + [t[1] for t in sorted(autres, reverse=True)]
 
 
