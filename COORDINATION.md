@@ -36,6 +36,20 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 
 ## Journal (le plus récent en haut)
 
+- **27/11 22:10 — Claude Code (Dell)** : DÉCISION — chaque décision de l'utilisateur est désormais notée dans ce journal.
+- **22–27/11 — Claude Code (Dell, `carte-acis-pc`) : DÉCISIONS de l'utilisateur pour le programme PC** (déjà appliquées sur la branche) :
+  - **Plus de XyGrib** : le programme tourne sans XyGrib ; la carte ACIS MétéoNav est le seul affichage.
+  - **La carte est la fenêtre principale**, ouverte **en plein écran** et **nette** (zoom Windows géré) ; **aucun écran d'attente** (sans météo : carte vide « Pas encore de météo ») ; si la carte plante : petit message Windows + « Envoyer le problème à A.C.I.S (WhatsApp) ».
+  - **Téléchargement automatique à l'ouverture** (désactivable) ; bouton **« Télécharger »** toujours visible : fond blanc, **ancre A.C.I.S** (image fournie, `appli/ancre.txt`) inclinée et collée au mot, mot **rouge drapeau, très gras, centré**.
+  - **Menu de l'ancienne première page dans Paramètres**, ouvert en **cliquant sur le drapeau** ; « Valeurs » et « Marge de sécurité » aussi dans Paramètres ; « A.C.I.S Marine » retiré à côté du titre.
+  - **Nom du client + validité de l'abonnement en haut** (panneau de droite), **date et heure Internet** (jamais l'horloge du PC) au-dessus.
+  - **Coordonnées au format A.C.I.S : `N34°38.808-E10°45.341`** (lettre devant, minutes à 3 décimales, tiret).
+  - **Flèches ◀ ▶ = deux grands triangles** ; boutons des couches (Vent, Vagues…) et texte du panneau de droite **plus grands**.
+  - **Lune dans la bande bleue à gauche**, dessinée selon sa phase ; au survol : sa fiche (phase, lever/coucher, marée, prochaines pleine/nouvelle lune).
+  - **Couches courant, pluie, nuages, marée** + fiche du point avec marée (PM/BM, marnage, vive-eau/morte-eau), soleil, lune ; **marée cochée par défaut**.
+  - **Logo A.C.I.S en filigrane** (« gravé ») sur la terre Algérie–Tunisie, sans barbules dessus (`appli/logo.txt`).
+  - **Frise du temps comme XyGrib**, avec les jours.
+  - Générateur de codes : **un renouvellement garde le numéro du client** (reconnu par son nom, accents/espaces/majuscules ignorés).
 - **27/11 22:00 — Claude Code (Dell, `carte-acis-pc`)** : carte PC, frise du temps comme XyGrib (jours « ven. 27 », heures 06h/12h/18h, trait rouge = maintenant, curseur jaune, clic/glisser) à la place du curseur simple ; VERSION 202611272200 ; commit `872e5f1`, pas publié. Aucun nouvel import, Python 3.8 OK.
 - **27/11 21:30 — Claude Code (Dell, `carte-acis-pc`)** : `glob` → `os.listdir` dans `fichiers_meteo()` (fichiers complets d'abord, morceaux ensuite) ; VERSION 202611272130 ; commit `77ef199`, pas publié. Règle 5 vérifiée sur l'exe Windows 7 actuel (`dist7`, 20/11) : tous les modules importés par `appli/` y sont (aucun nouvel import, `BASE_MIN` inchangé). Avant : fusion de `main` (25/11) dans la branche (`a80da41`), exe de test refait, traces de test effacées sur ce PC. `maj_en_ligne.py`, clés et `INTERDITS` non modifiés.
 - **27/11 20:20 — chat claude.ai** : création de ce fichier. Revue de la branche `carte-acis-pc` : contient bien toutes les corrections de `main` jusqu'au 25/11 20:45 ; syntaxe 3.8 OK ; seul point : `glob` (voir À faire).
