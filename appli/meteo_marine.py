@@ -711,7 +711,8 @@ def interface() -> None:
 
     # ---------------- carte (fenêtre principale, toujours ouverte)
     hote = {"telecharger": lambda: lancer(True), "abonnement": abonnement, "activer": fenetre_activation,
-            "parametres": parametres_programme, "quitter": root.destroy}
+            "parametres": parametres_programme, "quitter": root.destroy,
+            "xygrib": lambda: ouvrir_xygrib_secours()}     # bouton « XyGrib » en haut à droite de la carte
 
     def ecarter(f: str):
         """Fichier météo illisible : renommé « .abime » (gardé pour analyse, jamais rouvert)."""

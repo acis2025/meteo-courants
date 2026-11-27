@@ -1017,11 +1017,20 @@ class Visionneuse:
         cmd = tk.Frame(droite, bg="#f7f8fc")
         cmd.pack(side="bottom", fill="x", padx=8, pady=4)
         # date et heure Internet (tout en haut du panneau de droite)
-        self.lbl_heure = tk.Label(droite, text="…", bg=BLEU, fg="white",
+        entete = tk.Frame(droite, bg=BLEU)          # en-tête bleu : heure, abonnement… et XyGrib à droite
+        entete.pack(side="top", fill="x")
+        if "xygrib" in self.hote:                   # secours : la météo dans XyGrib (petit bouton en haut à droite)
+            tk.Button(entete, text="XyGrib", command=lambda: self.hote["xygrib"](), font=("Segoe UI", 9, "bold"),
+                      bg="#2c3a85", fg="white", activebackground="#3b4aa0", activeforeground="white", relief="flat",
+                      padx=S(8), pady=S(2), cursor="hand2").pack(side="right", anchor="n", padx=(0, S(6)),
+                                                                   pady=(S(6), 0))
+        textes = tk.Frame(entete, bg=BLEU)
+        textes.pack(side="left", fill="x", expand=True)
+        self.lbl_heure = tk.Label(textes, text="…", bg=BLEU, fg="white",
                                   font=("Segoe UI", 12, "bold"), justify="center", pady=6 if not hote else 3)
         self.lbl_heure.pack(side="top", fill="x")
         if self.hote:                              # programme : nom du client et validité de l'abonnement
-            self.lbl_abo = tk.Label(droite, text="", bg=BLEU, fg="#7CFC9A", font=("Segoe UI", 9, "bold"),
+            self.lbl_abo = tk.Label(textes, text="", bg=BLEU, fg="#7CFC9A", font=("Segoe UI", 9, "bold"),
                                     justify="center", cursor="hand2", pady=3)
             self.lbl_abo.pack(side="top", fill="x")
             self.lbl_abo.bind("<Button-1>", lambda e: self.hote.get("activer", lambda: None)())
@@ -1069,9 +1078,20 @@ class Visionneuse:
         self.cv.bind("<MouseWheel>", self._molette)                  # Windows
         self.cv.bind("<Button-4>", lambda e: self._zoomer(1.25, e.x, e.y))   # Linux
         self.cv.bind("<Button-5>", lambda e: self._zoomer(0.8, e.x, e.y))
-        w.bind("<Left>", lambda e: self.avancer(-1))
-        w.bind("<Right>", lambda e: self.avancer(1))
-        w.bind("<space>", lambda e: self.basculer_lecture())
+        # clavier : les flèches DÉPLACENT la carte ; + / - zooment ; l'heure : Page préc. / Page suiv.
+        # (ou Ctrl + ← / →) ; Espace : animation. « break » : la liste des zones ne prend pas les flèches.
+        for touche, (dx, dy) in (("<Left>", (-1, 0)), ("<Right>", (1, 0)), ("<Up>", (0, -1)), ("<Down>", (0, 1))):
+            w.bind(touche, lambda e, dx=dx, dy=dy: self._clavier(lambda: self.deplacer(dx, dy), e))
+        for touche, f in (("<plus>", 1.5), ("<KP_Add>", 1.5), ("<equal>", 1.5), ("<minus>", 1 / 1.5),
+                          ("<KP_Subtract>", 1 / 1.5)):
+            w.bind(touche, lambda e, f=f: self._clavier(lambda: self._zoomer(f, self.W / 2, self.H / 2), e))
+        for touche, sens in (("<Prior>", -1), ("<Next>", 1), ("<Control-Left>", -1), ("<Control-Right>", 1)):
+            w.bind(touche, lambda e, sens=sens: self._clavier(lambda: self.avancer(sens), e))
+        w.bind("<space>", lambda e: self._clavier(self.basculer_lecture, e))
+        self.cv.bind("<Enter>", lambda e: self.cv.focus_set(), add="+")
+        self.cv.bind("<ButtonPress-1>", lambda e: self.cv.focus_set(), add="+")
+        self.zone.bind("<<ComboboxSelected>>", lambda e: self.win.after(50, self.cv.focus_set), add="+")
+        self.win.after(800, self.cv.focus_set)
 
         self.k = self._echeance_maintenant()
         self.curseur.set(self.k)
@@ -1425,6 +1445,22 @@ class Visionneuse:
                 self.vue.update(lat=la, lon=lo, z=z)
         self._borner()
         self.dessiner()
+
+    def deplacer(self, dx: int, dy: int):
+        """Fait glisser la vue d'un quart d'écran (flèches du clavier)."""
+        p, cos = self._ppd(), math.cos(math.radians(35.6))
+        self.vue["lon"] += dx * (self.W / 4) / p
+        self.vue["lat"] -= dy * (self.H / 4) * cos / p
+        self._borner()
+        self.dessiner()
+
+    def _clavier(self, action, e):
+        """Touche du clavier : ignorée si on écrit dans une case (liste des zones…), sinon action."""
+        cls = e.widget.winfo_class() if hasattr(e.widget, "winfo_class") else ""
+        if cls in ("Entry", "TEntry", "TCombobox", "Text", "Spinbox"):
+            return None
+        action()
+        return "break"
 
     def _molette(self, e):
         self._zoomer(1.25 if e.delta > 0 else 0.8, e.x, e.y)
