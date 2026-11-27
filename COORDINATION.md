@@ -12,7 +12,7 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 | Quoi | Où | Version |
 |---|---|---|
 | Code en ligne (tous les PC et téléphones) | branche `main`, dossier `appli/` → release `appli` | **202611252045** (25/11 20:45) |
-| Carte intégrée au programme PC (« ACIS MétéoNav ») | branche `carte-acis-pc` (conversation du Dell), commit `1b40cce` | 202611272355 — pas encore publiée (attend test Windows 7 + accord) ; installée sur le Dell pour le test |
+| Carte intégrée au programme PC (« ACIS MétéoNav ») | branche `carte-acis-pc` (conversation du Dell), commit `4ed52a7` | 202611280015 — pas encore publiée (attend test Windows 7 + accord) ; installée sur le Dell pour le test ; **aussi dans les kits FLASH (Sfax, Kélibia) du Bureau du Dell** |
 | `serveur.py` du téléphone | `appli/en_attente/` (pas dans le paquet en ligne) | version avec jeton restée sur le HP |
 
 ## Règles pour publier (branche `main`, dossier `appli/`)
@@ -37,6 +37,8 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 - [ ] Republier `serveur.py` (téléphone) avec le jeton du HP, en choisissant le fichier par date (`Tunisie_complet_*`), pas par ordre alphabétique.
 
 ## Journal (le plus récent en haut)
+
+- **28/11 00:15 — Claude Code (Dell, `carte-acis-pc`)** : DÉCISION de l'utilisateur — **refaire les deux clés USB (kits FLASH Sfax et Kélibia) avec la version carte** (non publiée). Fait : exe « Windows 7 à 11 » (Python 3.8 + PyInstaller 5.13.2) Sfax et Kélibia, VERSION 202611280015, modules vérifiés, démarrage testé ; copiés dans `FLASH_*\Windows 7 a 10\`, `.zip` refaits sans `cle_github.txt` ; anciens exe et `.rar` du 20/11 sauvegardés dans `MeteoMarineTN_complet\_sauvegarde_FLASH_ancien_2026-11-20`. Correction : le logo en filigrane prend d'abord le logo de l'agence (`ressources`), pour que Kélibia n'affiche pas celui de Sfax. APK et GenerateurCodes.exe des kits **inchangés** (générateur à recompiler par l'utilisateur, voir À faire). Commit `4ed52a7`, exe du Dell mis à jour. ⚠️ Ces kits installent une version **plus récente que la release en ligne** : ils garderont la carte même après publication d'une version plus ancienne (règle 3).
 
 - **27/11 23:55 — Claude Code (Dell, `carte-acis-pc`)** : ESSAI RÉEL du programme installé sur le Dell (licence réelle, vraies touches du clavier, vrai clic) : flèches = déplacement OK, Page suiv. = heure OK, « - » pavé num. OK, **bouton XyGrib OK** (ouvre le dernier `Tunisie_complet_*` dans XyGrib 1.2.6, installé sur le Dell). Défauts trouvés et corrigés : « + » d'un clavier AZERTY ne zoomait pas (→ reconnu par le caractère tapé) ; traits blancs droits au bord de la carte en dézoomant (côtés de découpage des terres, plus tracés) ; ligne Lune coupée (« Précision mesurée » seulement sans point survolé). VERSION 202611272355, commit `1b40cce`, pas publié ; exe du Dell mis à jour. Rappel : ← → ne bougent rien quand toute la zone tient en largeur (normal).
 - **27/11 23:30 — Claude Code (Dell, `carte-acis-pc`)** : DÉCISIONS de l'utilisateur — (1) bouton **« XyGrib »** placé **en haut à droite de l'en-tête bleu** du panneau de droite (à droite de l'heure et de l'abonnement) ; le bouton Secours de Paramètres reste ; (2) **les flèches du clavier déplacent la carte** (quart d'écran) ; **+ / -** zoom ; l'heure passe sur **Page préc. / Page suiv.** (ou **Ctrl + ← / →**) ; Espace = animation. Fait et testé (touches simulées) : VERSION 202611272330, commit `ee867ce`, pas publié ; exe installé sur le Dell mis à jour.
