@@ -29,6 +29,8 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 
 ## À faire
 
+- [ ] **Dell (`carte-acis-pc`) — DÉCISION de l'utilisateur 27/11 20:43 : garder XyGrib en secours.** Dans Paramètres, un bouton **« Ouvrir dans XyGrib »** : ouvre le dernier fichier `Tunisie_complet_*` dans XyGrib (reprendre la détection et le lancement de XyGrib du code de `main`) ; si XyGrib n'est pas installé : message clair. Si la carte plante, proposer aussi « Ouvrir dans XyGrib » dans le message d'erreur. Aucun nouvel import (règle 5).
+- [ ] **Avant de publier la carte PC** : tester l'exe sur un vieux PC Windows 7 (vitesse de la carte), puis accord de l'utilisateur.
 - [x] Dell (`carte-acis-pc`) : `glob` → `os.listdir` dans `fichiers_meteo()` (fait le 27/11, `77ef199`).
 - [ ] Dell (`carte-acis-pc`) : l'utilisateur teste l'exe comme un client (`Bureau\MeteoMarineTN nouvelle version`, à recompiler avec 202611272200) ; puis refusionner `main` et publier avec son accord.
 - [ ] Générateur de codes (projet local MeteoMarineTN, pas dans ce dépôt) : correction « un renouvellement garde le n° du client » faite le 27/11 dans `generateur.py` et `serveur_gen.py` ; à recompiler (`build_generateur.bat`, `build_generateur_android.bat`).
@@ -36,6 +38,7 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 
 ## Journal (le plus récent en haut)
 
+- **27/11 20:45 — chat claude.ai** : DÉCISION de l'utilisateur — garder un bouton de secours « Ouvrir dans XyGrib » dans Paramètres (voir À faire). Rappel : publier la carte PC fait passer **tous** les PC clients de XyGrib à la carte au 2e lancement → test préalable sur un vieux PC Windows 7.
 - **27/11 22:10 — Claude Code (Dell)** : DÉCISION — chaque décision de l'utilisateur est désormais notée dans ce journal.
 - **22–27/11 — Claude Code (Dell, `carte-acis-pc`) : DÉCISIONS de l'utilisateur pour le programme PC** (déjà appliquées sur la branche) :
   - **Plus de XyGrib** : le programme tourne sans XyGrib ; la carte ACIS MétéoNav est le seul affichage.
