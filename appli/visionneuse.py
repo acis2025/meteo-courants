@@ -1082,9 +1082,8 @@ class Visionneuse:
         # (ou Ctrl + ← / →) ; Espace : animation. « break » : la liste des zones ne prend pas les flèches.
         for touche, (dx, dy) in (("<Left>", (-1, 0)), ("<Right>", (1, 0)), ("<Up>", (0, -1)), ("<Down>", (0, 1))):
             w.bind(touche, lambda e, dx=dx, dy=dy: self._clavier(lambda: self.deplacer(dx, dy), e))
-        for touche, f in (("<plus>", 1.5), ("<KP_Add>", 1.5), ("<equal>", 1.5), ("<minus>", 1 / 1.5),
-                          ("<KP_Subtract>", 1 / 1.5)):
-            w.bind(touche, lambda e, f=f: self._clavier(lambda: self._zoomer(f, self.W / 2, self.H / 2), e))
+        # + / - : d'après le CARACTÈRE tapé (marche avec tous les claviers : AZERTY, QWERTY, pavé numérique)
+        w.bind("<Key>", self._touche_zoom, add="+")
         for touche, sens in (("<Prior>", -1), ("<Next>", 1), ("<Control-Left>", -1), ("<Control-Right>", 1)):
             w.bind(touche, lambda e, sens=sens: self._clavier(lambda: self.avancer(sens), e))
         w.bind("<space>", lambda e: self._clavier(self.basculer_lecture, e))
@@ -1454,6 +1453,14 @@ class Visionneuse:
         self._borner()
         self.dessiner()
 
+    def _touche_zoom(self, e):
+        f = {"+": 1.5, "=": 1.5, "-": 1 / 1.5, "_": 1 / 1.5}.get(e.char or "")
+        if f is None and e.keysym in ("KP_Add", "KP_Subtract"):
+            f = 1.5 if e.keysym == "KP_Add" else 1 / 1.5
+        if f is None:
+            return None
+        return self._clavier(lambda: self._zoomer(f, self.W / 2, self.H / 2), e)
+
     def _clavier(self, action, e):
         """Touche du clavier : ignorée si on écrit dans une case (liste des zones…), sinon action."""
         cls = e.widget.winfo_class() if hasattr(e.widget, "winfo_class") else ""
@@ -1519,6 +1526,41 @@ class Visionneuse:
             self._ecrire_fiche()
 
     # ---------------- dessin
+    def _traits_cote(self) -> list:
+        """Contours des terres en traits, SANS les côtés droits ajoutés au découpage de la carte
+        (bords nord/sud/est/ouest de la zone) : on ne trace que les vraies côtes. Calculé une fois."""
+        if getattr(self, "_traits", None) is not None:
+            return self._traits
+        pts = [p for poly in self.terres for p in poly]
+        if not pts:
+            self._traits = []
+            return self._traits
+        la0, la1 = min(p[0] for p in pts), max(p[0] for p in pts)
+        lo0, lo1 = min(p[1] for p in pts), max(p[1] for p in pts)
+        eps = 1e-6
+
+        def bord(a, b):                              # côté posé sur le cadre de découpage
+            return ((abs(a[1] - b[1]) < eps and (abs(a[1] - lo0) < eps or abs(a[1] - lo1) < eps)) or
+                    (abs(a[0] - b[0]) < eps and (abs(a[0] - la0) < eps or abs(a[0] - la1) < eps)))
+        traits = []
+        for poly in self.terres:
+            n = len(poly)
+            if n < 2:
+                continue
+            courant = [poly[0]]
+            for i in range(1, n + 1):
+                a, b = poly[i - 1], poly[i % n]
+                if bord(a, b):
+                    if len(courant) >= 2:
+                        traits.append(courant)
+                    courant = [b]
+                else:
+                    courant.append(b)
+            if len(courant) >= 2:
+                traits.append(courant)
+        self._traits = traits
+        return traits
+
     def _masque_terre(self, w: int, h: int, PAS: int) -> list:
         """Pour chaque case de l'image (w x h), True si elle est sur la terre (côtes de la carte).
         Remplissage par lignes : chaque côté de côte ne touche que les lignes qu'il traverse (rapide)."""
@@ -1640,17 +1682,22 @@ class Visionneuse:
         # (trait sombre + trait clair : on les voit sur des nuages blancs comme sur des couleurs foncées)
         remplir = couche == "carte" or zone == "mer"
         self._fil_zone = None                        # (le logo n'est dessiné que sur la terre pleine)
-        for poly in self.terres:
-            pts = []
-            for la, lo in poly:
-                x, y = self.xy(la, lo)
-                pts += (x, y)
-            if len(pts) >= 6:
-                if remplir:
+        if remplir:
+            for poly in self.terres:
+                pts = []
+                for la, lo in poly:
+                    x, y = self.xy(la, lo)
+                    pts += (x, y)
+                if len(pts) >= 6:
                     cv.create_polygon(pts, fill="#3b3f5c", outline="#0a0c1e", width=1.2 * ECH)
-                else:
-                    cv.create_polygon(pts, fill="", outline="#0a0c1e", width=3.2 * ECH)
-                    cv.create_polygon(pts, fill="", outline="#f2f4fb", width=1.3 * ECH)
+        else:
+            for trait in self._traits_cote():          # vraies côtes seulement (sans les bords de découpage)
+                pts = []
+                for la, lo in trait:
+                    pts += self.xy(la, lo)
+                if len(pts) >= 4:
+                    cv.create_line(pts, fill="#0a0c1e", width=3.2 * ECH, joinstyle="round")
+                    cv.create_line(pts, fill="#f2f4fb", width=1.3 * ECH, joinstyle="round")
         for ligne in self.frontieres:
             pts = []
             for la, lo in ligne:
@@ -2393,7 +2440,7 @@ class Visionneuse:
             self._fiche_maree_astres(f, la, lo)
         pe = (self.precision or {}).get("par_echeance") or {}
         s = pe.get(f"J+{int(self.d.echeances[self.k] // 24)}")
-        if s and s.get("n", 0) >= 100:
+        if s and s.get("n", 0) >= 100 and not point:      # (quand un point est montré, sa fiche a toute la place)
             f.insert("end", "Précision mesurée à cette échéance\n", ("b", "s"))
             f.insert("end", f"écart moyen {s['ecart_moyen_kt']} nds, {s['pct_a_5kt']} % à ±5 nds "
                             f"({self.precision.get('periode_jours', 30)} derniers jours, 7 aéroports côtiers)\n", "g")
