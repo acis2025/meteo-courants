@@ -12,7 +12,7 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 | Quoi | Où | Version |
 |---|---|---|
 | Code en ligne (tous les PC et téléphones) | branche `main`, dossier `appli/` → release `appli` | **202611252045** (25/11 20:45) |
-| Carte intégrée au programme PC (« ACIS MétéoNav ») | branche `carte-acis-pc` (conversation du Dell), commit `5db32fc` | 202611272310 — pas encore publiée (attend test Windows 7 + accord) ; installée sur le Dell pour le test |
+| Carte intégrée au programme PC (« ACIS MétéoNav ») | branche `carte-acis-pc` (conversation du Dell), commit `ee867ce` | 202611272330 — pas encore publiée (attend test Windows 7 + accord) ; installée sur le Dell pour le test |
 | `serveur.py` du téléphone | `appli/en_attente/` (pas dans le paquet en ligne) | version avec jeton restée sur le HP |
 
 ## Règles pour publier (branche `main`, dossier `appli/`)
@@ -32,12 +32,13 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 - [x] **Dell (`carte-acis-pc`) — DÉCISION de l'utilisateur 27/11 20:43 : garder XyGrib en secours.** (fait le 27/11, `5db32fc`) Dans Paramètres, un bouton **« Ouvrir dans XyGrib »** : ouvre le dernier fichier `Tunisie_complet_*` dans XyGrib (reprendre la détection et le lancement de XyGrib du code de `main`) ; si XyGrib n'est pas installé : message clair. Si la carte plante, proposer aussi « Ouvrir dans XyGrib » dans le message d'erreur. Aucun nouvel import (règle 5).
 - [ ] **Avant de publier la carte PC** : tester l'exe sur un vieux PC Windows 7 (vitesse de la carte), puis accord de l'utilisateur.
 - [x] Dell (`carte-acis-pc`) : `glob` → `os.listdir` dans `fichiers_meteo()` (fait le 27/11, `77ef199`).
-- [ ] Dell (`carte-acis-pc`) : l'utilisateur teste comme un client (programme installé sur le Dell, mis à jour à chaque changement : 202611272310) ; puis refusionner `main` et publier avec son accord.
+- [ ] Dell (`carte-acis-pc`) : l'utilisateur teste comme un client (programme installé sur le Dell, mis à jour à chaque changement : 202611272330) ; puis refusionner `main` et publier avec son accord.
 - [ ] Générateur de codes (projet local MeteoMarineTN, pas dans ce dépôt) : correction « un renouvellement garde le n° du client » faite le 27/11 dans `generateur.py` et `serveur_gen.py` ; à recompiler (`build_generateur.bat`, `build_generateur_android.bat`).
 - [ ] Republier `serveur.py` (téléphone) avec le jeton du HP, en choisissant le fichier par date (`Tunisie_complet_*`), pas par ordre alphabétique.
 
 ## Journal (le plus récent en haut)
 
+- **27/11 23:30 — Claude Code (Dell, `carte-acis-pc`)** : DÉCISIONS de l'utilisateur — (1) bouton **« XyGrib »** placé **en haut à droite de l'en-tête bleu** du panneau de droite (à droite de l'heure et de l'abonnement) ; le bouton Secours de Paramètres reste ; (2) **les flèches du clavier déplacent la carte** (quart d'écran) ; **+ / -** zoom ; l'heure passe sur **Page préc. / Page suiv.** (ou **Ctrl + ← / →**) ; Espace = animation. Fait et testé (touches simulées) : VERSION 202611272330, commit `ee867ce`, pas publié ; exe installé sur le Dell mis à jour.
 - **27/11 23:10 — Claude Code (Dell, `carte-acis-pc`)** : fait « Ouvrir dans XyGrib » (secours) : Paramètres → Secours → « Ouvrir dans XyGrib » (dernier `Tunisie_complet_*` ; si XyGrib introuvable : message + choix de XyGrib.exe, gardé dans la config) ; si la carte plante : « Annuler » propose XyGrib puis WhatsApp. Détection reprise de `main`, aucun nouvel import, plus d'ouverture automatique. VERSION 202611272310, commit `5db32fc`, pas publié. XyGrib absent du Dell : seul le cas « introuvable » a pu être testé.
 - **27/11 22:50 — Claude Code (Dell, `carte-acis-pc`)** : DÉCISIONS de l'utilisateur — (1) **une seule chose à la fois** sur la carte : vent/rafales = barbules, pluie/nuages = couleurs + valeurs (plus de barbules), marée = hauteur d'eau, vagues/courant = flèches ; (2) nouvelle couche **« Carte »** (carte seule, aucune donnée) ; (3) **« Couleurs : Mer / Terre / Partout »** pour vent, rafales, pluie, nuages (gardé par couche) ; (4) **terre toujours visible** (côtes et frontières en double trait sombre + clair) ; (5) **« + Flèches du courant »** ajoutables à toute couche, flèches **plus grandes** ; (6) l'exe installé sur le Dell est **mis à jour à chaque changement**. Fait : VERSION 202611272250, commit `e91022b`. Aussi : ligne Lune de la fiche raccourcie.
 - **27/11 20:45 — chat claude.ai** : DÉCISION de l'utilisateur — garder un bouton de secours « Ouvrir dans XyGrib » dans Paramètres (voir À faire). Rappel : publier la carte PC fait passer **tous** les PC clients de XyGrib à la carte au 2e lancement → test préalable sur un vieux PC Windows 7.
