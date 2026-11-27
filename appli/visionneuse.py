@@ -918,6 +918,11 @@ class Visionneuse:
         self.marge_on = tk.BooleanVar(value=reg.get("marge", True))
         self.villes_on = tk.BooleanVar(value=reg.get("villes", True))
         self.vitesse = tk.IntVar(value=reg.get("vitesse_ms", 700))
+        # où chaque couche est colorée (mer / terre / partout) et flèches du courant en plus de la couche
+        self._zones = {c: z for c, z in (reg.get("zones") or {}).items()
+                       if c in self.ZONES_COUCHE and z in ("mer", "terre", "partout")}
+        self.zone_couleur = tk.StringVar(value="mer")
+        self.avec_courant = tk.BooleanVar(value=bool(reg.get("avec_courant", False)))
         self._fen_param = None
         self.k = 0
         self.lecture = None
@@ -967,8 +972,25 @@ class Visionneuse:
         self.lbl_date.pack(side="left", padx=8)
         self.curseur = _Frise(ligne, self)          # frise du temps : jours et heures, comme XyGrib
         self.curseur.pack(side="left", fill="x", expand=True)
-        self.legende = tk.Canvas(bas, height=S(30), bg="#eef0f6", highlightthickness=0)
-        self.legende.pack(fill="x", padx=6)
+        ligne2 = tk.Frame(bas, bg="#eef0f6")
+        ligne2.pack(fill="x", padx=6)
+        # à droite de la légende : où colorer (mer / terre / partout) et « + flèches du courant »
+        self.cadre_options = tk.Frame(ligne2, bg="#eef0f6")
+        self.cadre_options.pack(side="right", padx=(6, 0))
+        self.cadre_zone = tk.Frame(self.cadre_options, bg="#eef0f6")
+        tk.Label(self.cadre_zone, text="Couleurs :", bg="#eef0f6", fg=BLEU,
+                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 4))
+        for val, lib in (("mer", "Mer"), ("terre", "Terre"), ("partout", "Partout")):
+            tk.Radiobutton(self.cadre_zone, text=lib, value=val, variable=self.zone_couleur, indicatoron=False,
+                           command=self._zone_change, font=("Segoe UI", 9, "bold"), bg="#dfe3f2", fg=BLEU,
+                           selectcolor="#f6b400", relief="flat", offrelief="flat", padx=8, pady=1,
+                           cursor="hand2").pack(side="left", padx=1)
+        self.cb_courant = tk.Checkbutton(self.cadre_options, text="+ Flèches du courant", variable=self.avec_courant,
+                                         command=self._options_change, bg="#eef0f6", fg=BLEU, activebackground="#eef0f6",
+                                         font=("Segoe UI", 9, "bold"), cursor="hand2")
+        self.legende = tk.Canvas(ligne2, height=S(30), bg="#eef0f6", highlightthickness=0)
+        self.legende.pack(side="left", fill="x", expand=True)
+        self._options_couche()
         pied = tk.Frame(bas, bg=BLEU)
         pied.pack(fill="x")
         self.lbl_info = tk.Label(pied, text="", bg=BLEU, fg="#7CFC9A", font=("Segoe UI", 9, "bold"))
@@ -1073,11 +1095,54 @@ class Visionneuse:
             self.win.protocol("WM_DELETE_WINDOW", lambda: self.hote.get("quitter", self.win.destroy)())
             self.maj_abonnement()
 
+    # ---------------- options de la couche : zone des couleurs, flèches du courant en plus
+    def _options_couche(self):
+        """Montre seulement les options utiles à la couche choisie."""
+        couche = self.couche.get()
+        if couche in self.ZONES_COUCHE:
+            self.zone_couleur.set(self.zone_de(couche))
+            if not self.cadre_zone.winfo_ismapped():
+                self.cadre_zone.pack_forget()
+                self.cb_courant.pack_forget()                # « Couleurs » toujours avant « Flèches du courant »
+                self.cadre_zone.pack(side="left", padx=(0, 10))
+        elif self.cadre_zone.winfo_ismapped():
+            self.cadre_zone.pack_forget()
+        if self.d.courants and couche != "courant":
+            if not self.cb_courant.winfo_ismapped():
+                self.cb_courant.pack(side="left")
+        elif self.cb_courant.winfo_ismapped():
+            self.cb_courant.pack_forget()
+
+    def _sauver_options(self):
+        r = lire_reglages()
+        r.update(zones=dict(self._zones), avec_courant=bool(self.avec_courant.get()))
+        ecrire_reglages(r)
+
+    def _zone_change(self):
+        couche = self.couche.get()
+        if couche in self.ZONES_COUCHE:
+            self._zones[couche] = self.zone_couleur.get()
+            self._sauver_options()
+        self.dessiner()
+
+    def _options_change(self):
+        self._sauver_options()
+        self.dessiner()
+
+    def _couche_change(self):
+        self._options_couche()
+        self.dessiner()
+
     # ---------------- boutons des couches (refaits quand un nouveau fichier est chargé)
     def _boutons_couches(self):
         tk = self.tk
         for b in self.cadre_couches.winfo_children():
             b.destroy()
+        # « Carte » : la carte seule, sans aucune donnée météo
+        tk.Radiobutton(self.cadre_couches, text="Carte", value="carte", variable=self.couche, indicatoron=False,
+                       command=self._couche_change, bg="#2c3a85", fg="white", selectcolor="#f6b400",
+                       activebackground="#3b4aa0", font=("Segoe UI", 11, "bold"), padx=10, pady=3, relief="flat",
+                       offrelief="flat").pack(side="left", padx=(1, 6), pady=4)
         for nom, (lib, *_r) in COUCHES.items():
             if nom == "rafales" and not any("GUST" in self.d.par[e] for e in self.d.echeances[:3]):
                 continue
@@ -1089,9 +1154,11 @@ class Visionneuse:
             if nom == "maree" and not self.d.maree:
                 continue
             tk.Radiobutton(self.cadre_couches, text=lib, value=nom, variable=self.couche, indicatoron=False,
-                           command=self.dessiner, bg="#2c3a85", fg="white", selectcolor="#f6b400",
+                           command=self._couche_change, bg="#2c3a85", fg="white", selectcolor="#f6b400",
                            activebackground="#3b4aa0", font=("Segoe UI", 11, "bold"), padx=10, pady=3, relief="flat",
                            offrelief="flat").pack(side="left", padx=1, pady=4)
+        if hasattr(self, "cadre_zone"):
+            self._options_couche()
 
     # ---------------- liens avec le programme principal (hote)
     def statut(self, texte: str, couleur: str = "#ffd166"):
@@ -1133,8 +1200,9 @@ class Visionneuse:
         self._lune_cache = {}
         self.curseur.config(to=max(0, len(d.echeances) - 1))
         self._boutons_couches()
-        if self.d.grille(self.couche.get(), 0) is None:
+        if self.couche.get() != "carte" and self.d.grille(self.couche.get(), 0) is None:
             self.couche.set("vent")
+        self._options_couche()
         self.k = self._echeance_maintenant()
         self.curseur.set(self.k)
         self.dessiner()
@@ -1415,14 +1483,52 @@ class Visionneuse:
             self._ecrire_fiche()
 
     # ---------------- dessin
-    def _image(self, couche: str):
-        """Image des couleurs (1 pixel calculé tous les PAS pixels, puis agrandie)."""
+    def _masque_terre(self, w: int, h: int, PAS: int) -> list:
+        """Pour chaque case de l'image (w x h), True si elle est sur la terre (côtes de la carte).
+        Remplissage par lignes : chaque côté de côte ne touche que les lignes qu'il traverse (rapide)."""
+        cle = (w, h, PAS, self.W, self.H, round(self.vue["lat"], 5), round(self.vue["lon"], 5), round(self.vue["z"], 5))
+        if getattr(self, "_masque_cle", None) == cle:
+            return self._masque
+        coupes = [[] for _ in range(h)]
+        for poly in self.terres:
+            pts = [self.xy(la, lo) for la, lo in poly]
+            n = len(pts)
+            if n < 3:
+                continue
+            for i in range(n):
+                x1, y1 = pts[i]
+                x2, y2 = pts[(i + 1) % n]
+                if y1 == y2:
+                    continue
+                ya, yb = (y1, y2) if y1 < y2 else (y2, y1)
+                r0 = max(0, int(math.ceil(ya / PAS - 0.5)))
+                r1 = min(h - 1, int(math.ceil(yb / PAS - 0.5)) - 1)
+                for r in range(r0, r1 + 1):
+                    yc = (r + 0.5) * PAS
+                    coupes[r].append(x1 + (x2 - x1) * (yc - y1) / (y2 - y1))
+        masque = []
+        for r in range(h):
+            ligne = bytearray(w)
+            xs = sorted(coupes[r])
+            for i in range(0, len(xs) - 1, 2):
+                c0 = max(0, int(math.ceil(xs[i] / PAS - 0.5)))
+                c1 = min(w - 1, int(math.ceil(xs[i + 1] / PAS - 0.5)) - 1)
+                for c in range(c0, c1 + 1):
+                    ligne[c] = 1
+            masque.append(ligne)
+        self._masque_cle, self._masque = cle, masque
+        return masque
+
+    def _image(self, couche: str, zone: str = "mer"):
+        """Image des couleurs (1 pixel calculé tous les PAS pixels, puis agrandie).
+        zone « terre » : la mer reste sombre (seule la terre est colorée)."""
         tk = self.tk
         PAS = max(4, S(4))
         g = self.d.grille(couche, self.k)
         if g is None:
             return None
-        cle = (couche, self.k, self.W, self.H, round(self.vue["lat"], 5), round(self.vue["lon"], 5), round(self.vue["z"], 5))
+        cle = (couche, zone, self.k, self.W, self.H, round(self.vue["lat"], 5), round(self.vue["lon"], 5),
+               round(self.vue["z"], 5))
         if cle == self._img_cle:
             return self._img
         lib, ech, _u, _g, reg = COUCHES[couche]
@@ -1438,6 +1544,7 @@ class Visionneuse:
             i0 = int(math.floor(xg))
             cols.append((i0, xg - i0) if 0 <= i0 < g.ni else None)
         v, ni = g.v, g.ni
+        masque = self._masque_terre(w, h, PAS) if zone == "terre" else None
         lignes = []
         for y in range(h):
             la = self.vue["lat"] - ((y + 0.5) * PAS - self.H / 2) * cos / p
@@ -1450,9 +1557,13 @@ class Visionneuse:
             j1 = min(j0 + 1, g.nj - 1)
             b0, b1 = j0 * ni, j1 * ni
             ligne = []
-            for c in cols:
+            mligne = masque[y] if masque is not None else None
+            for xi, c in enumerate(cols):
                 if c is None:
                     ligne.append(fond)
+                    continue
+                if mligne is not None and not mligne[xi]:
+                    ligne.append("#2b3358")          # mer (mode « Terre ») : un peu plus claire que la terre sèche
                     continue
                 i0, fx = c
                 i1 = i0 + 1 if i0 + 1 < ni else i0
@@ -1481,29 +1592,37 @@ class Visionneuse:
         cv = self.cv
         cv.delete("all")
         couche = self.couche.get()
-        if self.d.grille(couche, self.k) is None and couche != "vent":
+        if couche != "carte" and self.d.grille(couche, self.k) is None and couche != "vent":
             couche = "vent"
-        img = self._image(couche) if not rapide or self._img is not None else None
-        if rapide and self._img is not None:
-            img = None                               # pendant un déplacement : pas de recalcul, carte seule
+        zone = self.zone_de(couche)
+        img = None
+        if couche != "carte" and (not rapide or self._img is None):
+            img = self._image(couche, zone)
         if img is not None:
             cv.create_image(0, 0, image=img, anchor="nw")
-        # terres : remplies (vent, vagues, courant) ; contour seul pour la pluie et les nuages (visibles sur terre)
-        remplir = couche not in ("pluie", "nuages")
+        # terres : remplies quand la couleur est seulement en mer (et carte seule) ; sinon, côtes bien visibles
+        # (trait sombre + trait clair : on les voit sur des nuages blancs comme sur des couleurs foncées)
+        remplir = couche == "carte" or zone == "mer"
+        self._fil_zone = None                        # (le logo n'est dessiné que sur la terre pleine)
         for poly in self.terres:
             pts = []
             for la, lo in poly:
                 x, y = self.xy(la, lo)
                 pts += (x, y)
             if len(pts) >= 6:
-                cv.create_polygon(pts, fill="#3b3f5c" if remplir else "", outline="#0a0c1e" if remplir else "#aab0d0",
-                                  width=1.2)
+                if remplir:
+                    cv.create_polygon(pts, fill="#3b3f5c", outline="#0a0c1e", width=1.2 * ECH)
+                else:
+                    cv.create_polygon(pts, fill="", outline="#0a0c1e", width=3.2 * ECH)
+                    cv.create_polygon(pts, fill="", outline="#f2f4fb", width=1.3 * ECH)
         for ligne in self.frontieres:
             pts = []
             for la, lo in ligne:
                 pts += self.xy(la, lo)
             if len(pts) >= 4:
-                cv.create_line(pts, fill="#c8cbe0", dash=(5, 4))
+                if not remplir:
+                    cv.create_line(pts, fill="#0a0c1e", width=2.6 * ECH)
+                cv.create_line(pts, fill="#c8cbe0" if remplir else "#ffffff", dash=(5, 4), width=1 * ECH)
         if remplir:
             self._filigrane()
         if not rapide:
@@ -1914,17 +2033,48 @@ class Visionneuse:
             cv.create_polygon(*t, fill="#121a45", outline="#ffffff")
         cv.create_oval(x - 1.6 * ECH, y - 1.6 * ECH, x + 1.6 * ECH, y + 1.6 * ECH, fill="#121a45", outline="")
 
-    def _fleche(self, x, y, vers, taille):
+    def _fleche(self, x, y, vers, taille, epais: float = 1.0):
         a = math.radians(vers)
         dx, dy = math.sin(a), -math.cos(a)
         x1, y1, x2, y2 = x - dx * taille / 2, y - dy * taille / 2, x + dx * taille / 2, y + dy * taille / 2
-        for lw, c in ((3.4 * ECH, "#ffffff"), (1.6 * ECH, "#121a45")):
+        pointe = S(6) * epais
+        for lw, c in ((3.4 * ECH * epais, "#ffffff"), (1.6 * ECH * epais, "#121a45")):
             self.cv.create_line(x1, y1, x2, y2, width=lw, fill=c, capstyle="round")
-            self.cv.create_line(x2 - S(6) * math.sin(a - .5), y2 + S(6) * math.cos(a - .5), x2, y2,
-                                x2 - S(6) * math.sin(a + .5), y2 + S(6) * math.cos(a + .5), width=lw, fill=c,
+            self.cv.create_line(x2 - pointe * math.sin(a - .5), y2 + pointe * math.cos(a - .5), x2, y2,
+                                x2 - pointe * math.sin(a + .5), y2 + pointe * math.cos(a + .5), width=lw, fill=c,
                                 capstyle="round", joinstyle="round")
 
+    # couches dont la couleur peut être montrée sur la mer, sur la terre ou partout
+    ZONES_COUCHE = ("vent", "rafales", "pluie", "nuages")
+    ZONE_DEFAUT = {"vent": "mer", "rafales": "mer", "pluie": "partout", "nuages": "partout"}
+
+    def zone_de(self, couche: str) -> str:
+        """Où la couche est montrée : « mer », « terre » ou « partout » (vagues, courant, marée : la mer)."""
+        if couche not in self.ZONES_COUCHE:
+            return "mer"
+        return self._zones.get(couche, self.ZONE_DEFAUT[couche])
+
+    def _dans_zone(self, zone: str, la: float, lo: float) -> bool:
+        if zone == "partout":
+            return True
+        mer = self.d.est_mer(la, lo)
+        return mer if zone == "mer" else not mer
+
+    def _fleche_courant(self, x, y, la, lo, chiffres):
+        """Flèche du courant (plus grande qu'avant), avec sa vitesse en nœuds."""
+        if not self.d.est_mer(la, lo):
+            return
+        c = self.d.courant(self.k, la, lo)
+        if not c or c[0] < 0.05:
+            return
+        self._fleche(x, y, c[1], S(18 + min(c[0], 2.5) * 12), epais=1.35)
+        if chiffres:
+            a = math.radians(c[1])
+            self._etiquette(x + math.cos(a) * S(18), y + math.sin(a) * S(18), f"{c[0]:.1f}", "#bff3ff")
+
     def _symboles(self, couche):
+        """UNE seule chose à la fois : la couche choisie (barbules, flèches ou valeurs), dans sa zone.
+        En plus, si demandé : les flèches du courant (décalées d'une demi-maille pour ne rien cacher)."""
         p = self._ppd()
         pas_deg = next((v for v in (1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2) if v * p >= S(58)), 2)
         cos = math.cos(math.radians(35.6))
@@ -1932,58 +2082,81 @@ class Visionneuse:
         la_h, lo_g = self.geo(-20, -20)
         la_b, lo_d = self.geo(self.W + 20, self.H + 20)
         chiffres = self.chiffres.get()
-        la = math.ceil(la_b / pas_la) * pas_la
-        while la <= la_h:
-            lo = math.ceil(lo_g / pas_deg) * pas_deg
-            while lo <= lo_d:
-                x, y = self.xy(la, lo)
-                lo += pas_deg
-                if x < S(16) or x > self.W - S(12) or y < S(14) or y > self.H - S(8):
-                    continue
-                lo_pt = lo - pas_deg
-                fz = getattr(self, "_fil_zone", None)
-                if fz and couche in ("vent", "rafales") and (x - fz[0]) ** 2 + (y - fz[1]) ** 2 < (fz[2] + 16) ** 2:
-                    continue                         # laisse le logo A.C.I.S propre
-                if couche in ("vent", "rafales", "pluie", "nuages"):
-                    w = self.d.vent(self.k, la, lo_pt)
-                    if not w:
+        zone = self.zone_de(couche)
+        fz = getattr(self, "_fil_zone", None)
+        avec_courant = couche != "courant" and self.avec_courant.get() and bool(self.d.courants)
+        for decale in ((0.0, 0.0),) + (((0.5, 0.5),) if avec_courant else ()):
+            la = math.ceil(la_b / pas_la) * pas_la + decale[0] * pas_la
+            while la <= la_h:
+                lo = math.ceil(lo_g / pas_deg) * pas_deg + decale[1] * pas_deg
+                while lo <= lo_d:
+                    x, y = self.xy(la, lo)
+                    lo_pt = lo
+                    lo += pas_deg
+                    if x < S(16) or x > self.W - S(12) or y < S(14) or y > self.H - S(8):
                         continue
-                    kt, de = w
-                    if couche == "rafales":
-                        g = self.d.grille("rafales", self.k)
-                        r = g.en(la, lo_pt) if g else None
-                        if r is not None:
-                            kt = r
-                    self._barbule(x, y, de, kt)
-                    if chiffres:
-                        a = math.radians(de)
-                        m = self.marge(self.k, kt)
-                        txt = f"{kt:.0f}" + (f" (+{m})" if m else "")
-                        self._etiquette(x - math.sin(a) * S(12), y + math.cos(a) * S(12), txt,
-                                        "#ffd166" if m else "#ffffff")
-                elif couche in ("courant", "maree"):          # marée : flèches du courant par-dessus
-                    if not self.d.est_mer(la, lo_pt):
+                    if fz and (x - fz[0]) ** 2 + (y - fz[1]) ** 2 < (fz[2] + 16) ** 2:
+                        continue                     # laisse le logo A.C.I.S propre
+                    if decale != (0.0, 0.0):         # 2e passage : seulement les flèches du courant
+                        self._fleche_courant(x, y, la, lo_pt, chiffres)
                         continue
-                    c = self.d.courant(self.k, la, lo_pt)
-                    if not c or c[0] < 0.05:
+                    if couche == "carte":
                         continue
-                    self._fleche(x, y, c[1], S(12 + min(c[0], 2.5) * 9))
-                    if chiffres:
-                        a = math.radians(c[1])
-                        self._etiquette(x + math.cos(a) * S(16), y + math.sin(a) * S(16), f"{c[0]:.1f}")
-                else:
-                    if not self.d.est_mer(la, lo_pt):
-                        continue
-                    g = self.d.grille("vagues", self.k)
-                    h = g.en(la, lo_pt) if g else None
-                    d = self.d.direction_vagues(self.k, la, lo_pt)
-                    if h is None or d is None:
-                        continue
-                    self._fleche(x, y, (d + 180) % 360, S(14 + min(h, 4) * 4))
-                    if chiffres:
-                        a = math.radians(d)
-                        self._etiquette(x + math.cos(a) * S(16), y + math.sin(a) * S(16), f"{h:.1f}")
-            la += pas_la
+                    if couche in ("vent", "rafales"):
+                        if not self._dans_zone(zone, la, lo_pt):
+                            continue
+                        w = self.d.vent(self.k, la, lo_pt)
+                        if not w:
+                            continue
+                        kt, de = w
+                        if couche == "rafales":
+                            g = self.d.grille("rafales", self.k)
+                            r = g.en(la, lo_pt) if g else None
+                            if r is not None:
+                                kt = r
+                        self._barbule(x, y, de, kt)
+                        if chiffres:
+                            a = math.radians(de)
+                            m = self.marge(self.k, kt)
+                            txt = f"{kt:.0f}" + (f" (+{m})" if m else "")
+                            self._etiquette(x - math.sin(a) * S(12), y + math.cos(a) * S(12), txt,
+                                            "#ffd166" if m else "#ffffff")
+                    elif couche in ("pluie", "nuages"):      # seulement la valeur (pas de vent par-dessus)
+                        if not chiffres or not self._dans_zone(zone, la, lo_pt):
+                            continue
+                        g = self.d.grille(couche, self.k)
+                        v = g.en(la, lo_pt) if g else None
+                        if v is None:
+                            continue
+                        if couche == "pluie":
+                            if v < 0.1:
+                                continue
+                            txt = f"{v:.1f}" if v < 10 else f"{v:.0f}"
+                        else:
+                            txt = f"{v:.0f}"
+                        self._etiquette(x, y, txt)
+                    elif couche == "courant":
+                        self._fleche_courant(x, y, la, lo_pt, chiffres)
+                    elif couche == "maree":                  # seulement la hauteur d'eau (m)
+                        if not chiffres or not self.d.est_mer(la, lo_pt):
+                            continue
+                        g = self.d.grille("maree", self.k)
+                        v = g.en(la, lo_pt) if g else None
+                        if v is not None:
+                            self._etiquette(x, y, f"{v:+.2f}")
+                    else:                                    # vagues
+                        if not self.d.est_mer(la, lo_pt):
+                            continue
+                        g = self.d.grille("vagues", self.k)
+                        h = g.en(la, lo_pt) if g else None
+                        d = self.d.direction_vagues(self.k, la, lo_pt)
+                        if h is None or d is None:
+                            continue
+                        self._fleche(x, y, (d + 180) % 360, S(14 + min(h, 4) * 4))
+                        if chiffres:
+                            a = math.radians(d)
+                            self._etiquette(x + math.cos(a) * S(16), y + math.sin(a) * S(16), f"{h:.1f}")
+                la += pas_la
 
     def _villes(self):
         zones = []
@@ -2031,6 +2204,11 @@ class Visionneuse:
     def _legende(self, couche):
         lg = self.legende
         lg.delete("all")
+        if couche == "carte":
+            lg.create_text(S(60), S(15), text="Carte seule : aucune donnée météo affichée"
+                           + (" (flèches du courant en plus)" if self.avec_courant.get() and self.d.courants else ""),
+                           anchor="w", font=("Segoe UI", 9, "bold"), fill=BLEU)
+            return
         lib, ech, unite, grad, reg = COUCHES[couche]
         table, indice = palette(ech, reg)
         larg = max(S(200), lg.winfo_width() - S(120))
@@ -2090,7 +2268,12 @@ class Visionneuse:
         f.insert("end", "Soleil : ", ("b", "s"))
         f.insert("end", f"{hm(so[0])} – {hm(so[1])}\n", "s")
         f.insert("end", "Lune : ", "b")
-        f.insert("end", f"{nom_lune(frac, ph)} {round(frac * 100)} %  ↑{hm(lu[0])} ↓{hm(lu[1])}\n")
+        court = {"gibbeuse croissante": "gibbeuse cr.", "gibbeuse décroissante": "gibbeuse décr.",
+                 "dernier croissant": "dern. croissant", "premier quartier": "1er quartier",
+                 "dernier quartier": "dern. quartier"}
+        nl = nom_lune(frac, ph)
+        f.insert("end", f"{court.get(nl, nl)} {round(frac * 100)} % ")
+        f.insert("end", f"↑{hm(lu[0])} ↓{hm(lu[1])}\n", "d")
 
     def _courbe_maree(self, f, serie: list, h0: float, hn: float) -> None:
         """Petite courbe de la marée du jour (0 h – 24 h), trait jaune = heure affichée."""
