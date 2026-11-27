@@ -83,6 +83,37 @@ def sauver_config(c: dict) -> None:
     json.dump(c, open(CONFIG, "w", encoding="utf-8"), indent=1)
 
 
+# ---------------------------------------------------------------- XyGrib : seulement en SECOURS
+# (décision du 27/11 : la carte ACIS MétéoNav est l'affichage ; XyGrib reste possible depuis Paramètres
+#  ou si la carte ne s'ouvre pas). Détection et lancement repris du code de main.
+CHEMINS_XYGRIB = [
+    r"C:\Program Files\XyGrib\XyGrib.exe",
+    r"C:\Program Files (x86)\XyGrib\XyGrib.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\XyGrib\XyGrib.exe"),
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\XyGrib\XyGrib.exe"),
+    "/Applications/XyGrib.app/Contents/MacOS/XyGrib",
+    "/usr/bin/xygrib", "/usr/local/bin/xygrib",
+]
+
+
+def trouver_xygrib(c: dict) -> str:
+    if c.get("xygrib") and os.path.exists(c["xygrib"]):
+        return c["xygrib"]
+    for p in CHEMINS_XYGRIB:
+        if os.path.exists(p):
+            return p
+    return shutil.which("xygrib") or shutil.which("XyGrib") or ""
+
+
+def ouvrir_dans_xygrib(fichier: str, c: dict) -> str:
+    """Ouvre le fichier dans XyGrib ; "" si XyGrib n'est pas installé."""
+    exe = trouver_xygrib(c)
+    if not exe:
+        return ""
+    subprocess.Popen([exe, fichier])
+    return f"Ouverture dans XyGrib : {os.path.basename(fichier)}"
+
+
 def nettoyer_morceaux(dossier: str) -> int:
     """Morceaux laissés par un téléchargement interrompu (fichier unique) : vent, vagues ou courants SEULS.
     Ils ne doivent jamais être pris pour les prévisions."""
@@ -537,7 +568,7 @@ def interface() -> None:
             c.update(vent=v_vent.get(), vagues=v_vag.get(), maree=v_maree.get(), fusion=True,
                      jours=int(v_jours.get()), pas_h=int(v_pas.get()), dossier=v_dos.get(),
                      garder=2 if v_garder.get() else 0, auto_demarrage=v_auto.get())
-            for ancien in ("ouvrir", "xygrib", "fermer", "reglages_xygrib"):   # XyGrib n'est plus utilisé
+            for ancien in ("ouvrir", "fermer", "reglages_xygrib"):   # XyGrib : plus d'ouverture automatique
                 c.pop(ancien, None)
             sauver_config(c)
         except Exception:
@@ -577,6 +608,11 @@ def interface() -> None:
             d = filedialog.askdirectory(initialdir=v_dos.get(), parent=fen)
             if d: v_dos.set(d); lire_ui()
         ttk.Button(l3, text="…", width=3, command=choisir_dossier).pack(side="left")
+
+        titre("Secours")
+        ls = ligne()
+        ttk.Button(ls, text="Ouvrir dans XyGrib", command=lambda: ouvrir_xygrib_secours(fen)).pack(side="left")
+        tk.Label(ls, text="(si XyGrib est installé)", bg=B, fg="#6b7290", font=("Segoe UI", 9)).pack(side="left", padx=6)
 
         titre("Abonnement")
         zoom = max(1.0, float(cadre.winfo_fpixels("1i")) / 96.0)      # zoom de Windows (texte net)
@@ -702,7 +738,10 @@ def interface() -> None:
         try:
             encore = messagebox.askretrycancel("Météo Marine Tunisie",
                                                "La carte ne s'ouvre pas.\n\n« Recommencer » : nouvel essai\n"
-                                               "« Annuler » : envoyer le problème à A.C.I.S", parent=root)
+                                               "« Annuler » : autres solutions", parent=root)
+            f_xy = dernier_fichier(lire_ui()["dossier"]) if not encore else ""
+            xygrib = (not encore) and bool(f_xy) and bool(trouver_xygrib(c)) and messagebox.askyesno(
+                "Météo Marine Tunisie", "Ouvrir la météo dans XyGrib (secours) ?", parent=root)
             envoyer = (not encore) and messagebox.askyesno(
                 "Météo Marine Tunisie", "Envoyer le problème à A.C.I.S par WhatsApp ?\n(client, PC, version et erreur)",
                 parent=root)
@@ -711,6 +750,8 @@ def interface() -> None:
         if encore:
             root.after(100, demarrer_carte)
             return
+        if xygrib:
+            log(ouvrir_dans_xygrib(f_xy, c))
         if envoyer:
             envoyer_probleme()
         root.after(300, root.destroy)
@@ -767,6 +808,26 @@ def interface() -> None:
 
     def demarrer_carte():
         afficher(dernier_fichier(lire_ui()["dossier"]))
+
+    def ouvrir_xygrib_secours(parent=None):
+        """Bouton de secours (Paramètres) : le dernier fichier météo dans XyGrib."""
+        cfg = lire_ui()
+        f = dernier_fichier(cfg["dossier"])
+        if not f:
+            messagebox.showinfo("XyGrib", "Pas encore de fichier météo : cliquez d'abord sur « Télécharger ».",
+                                parent=parent or fenetre())
+            return
+        if not trouver_xygrib(cfg):
+            if not messagebox.askyesno("XyGrib", "XyGrib n'est pas installé sur ce PC (ou introuvable).\n\n"
+                                                 "Indiquer où se trouve XyGrib.exe ?", parent=parent or fenetre()):
+                return
+            chemin = filedialog.askopenfilename(title="Emplacement de XyGrib.exe", parent=parent or fenetre(),
+                                                filetypes=[("XyGrib", "XyGrib.exe"), ("Programme", "*.exe")])
+            if not chemin:
+                return
+            c["xygrib"] = chemin
+            sauver_config(c)
+        log(ouvrir_dans_xygrib(f, cfg) or "XyGrib introuvable")
 
     def envoyer_probleme():
         """WhatsApp vers A.C.I.S avec un message déjà écrit : client, PC, version, erreur exacte."""
