@@ -83,6 +83,23 @@ def sauver_config(c: dict) -> None:
     json.dump(c, open(CONFIG, "w", encoding="utf-8"), indent=1)
 
 
+def nettoyer_morceaux(dossier: str) -> int:
+    """Morceaux laissés par un téléchargement interrompu (fichier unique) : vent, vagues ou courants SEULS.
+    Ils ne doivent jamais être pris pour les prévisions."""
+    import re
+    n = 0
+    if not os.path.isdir(dossier):
+        return 0
+    for nom in os.listdir(dossier):
+        if nom.startswith("en_cours_") or re.match(r"Tunisie_(vent|vagues|courants)_\d{8}_\d{4}\.grb2(\.part)?$", nom):
+            try:
+                os.remove(os.path.join(dossier, nom))
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
 def nettoyer_historique(dossier: str, garder: int = 2) -> int:
     """Supprime les anciens fichiers GRIB et garde les `garder` derniers téléchargements.
     Tri d'après la date écrite dans le nom (date Internet), pas l'horloge du PC."""
@@ -120,6 +137,8 @@ def executer(c: dict, tel: gd.Telechargeur) -> list[str]:
     pas_long = int(c.get("pas_long", 6))
     vent = gd.modele_gfs(max_h, pas, pas_long) if c["vent"] else None
     vagues = gd.modele_vagues(max_h, pas, "0p25" if fusion else "0p16", pas_long) if c["vagues"] else None
+    if fusion:
+        nettoyer_morceaux(c["dossier"])
     # Pour un fichier unique, vent et vagues doivent venir du même run
     # (les vagues sont publiées un peu après le vent).
     run = None
@@ -144,13 +163,16 @@ def executer(c: dict, tel: gd.Telechargeur) -> list[str]:
     if run:
         tel.run_publie = dt.datetime.strptime(run[0] + run[1], "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
     produits = []
+    # fichier unique : morceaux sous un nom provisoire (si l'appli est arrêtée en cours de route, un morceau
+    # « Tunisie_vent_… » serait pris pour les prévisions : vent seul, sans vagues, pluie ni courants)
+    nom = (lambda x: gd.nom_provisoire(x, c["dossier"])) if fusion else (lambda x: gd.nom_fichier(x, c["dossier"], tel.heure))
     if vent:
-        produits.append(tel.telecharger(vent, gd.nom_fichier("vent", c["dossier"], tel.heure), run=run))
+        produits.append(tel.telecharger(vent, nom("vent"), run=run))
     if vagues:
-        produits.append(tel.telecharger(vagues, gd.nom_fichier("vagues", c["dossier"], tel.heure), run=run))
+        produits.append(tel.telecharger(vagues, nom("vagues"), run=run))
     if fusion and c.get("courants", True):
         try:                                      # facultatif : sans courants, on continue normalement
-            fc = tel.courants(gd.nom_fichier("courants", c["dossier"], tel.heure))
+            fc = tel.courants(nom("courants"))
             if fc:                                # seulement aux heures du vent / des vagues (pas d'image vide)
                 heures = set()
                 for p in produits:
@@ -269,15 +291,16 @@ def auto_installation() -> bool:
 
 # =========================================================================== interface
 def fichiers_meteo(dossier: str) -> list:
-    """Fichiers météo téléchargés, du plus récent au plus ancien (date écrite dans le nom = date Internet)."""
+    """Fichiers météo téléchargés, du plus récent au plus ancien (date écrite dans le nom = date Internet).
+    Les fichiers complets passent avant tout : un morceau « vent seul » ne doit jamais être pris pour la météo."""
     import glob
     import re
-    tous = []
+    complets, autres = [], []
     for f in glob.glob(os.path.join(dossier, "Tunisie_*.grb2")):
         m = re.search(r"_(\d{8}_\d{4})\.grb2$", f)
         if m:
-            tous.append((m.group(1), "complet" in os.path.basename(f), f))
-    return [t[2] for t in sorted(tous, reverse=True)]
+            (complets if "complet" in os.path.basename(f) else autres).append((m.group(1), f))
+    return [t[1] for t in sorted(complets, reverse=True)] + [t[1] for t in sorted(autres, reverse=True)]
 
 
 def dernier_fichier(dossier: str) -> str:
@@ -594,6 +617,9 @@ def interface() -> None:
 
         def progression_eta(i, n):
             progression(i, n)
+            if not etape["nom"]:                       # fichier du robot : avancement en %
+                statut(f"Téléchargement des prévisions préparées : {int(100 * i / max(n, 1))} %")
+                return
             ecoule = time.time() - etape["t0"]
             reste = ecoule / max(i, 1) * (n - i)
             statut(f"{etape['nom'] or 'Téléchargement'} : {i}/{n} — encore environ {int(reste) + 1} s")

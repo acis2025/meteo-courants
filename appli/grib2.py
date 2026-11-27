@@ -97,12 +97,28 @@ def _signe(v: int, nbits: int) -> int:
 
 
 def _depaqueter(donnees: bytes, n: int, nbits: int) -> list:
+    """n entiers de nbits bits, à la suite (big-endian). Par blocs de 8 valeurs (= nbits octets) :
+    des petits entiers au lieu d'un énorme (beaucoup plus rapide, surtout sur téléphone)."""
     if nbits == 0:
         return [0] * n
-    grand = int.from_bytes(donnees, "big")
-    total = len(donnees) * 8
+    if nbits == 8:
+        return list(donnees[:n])
+    if nbits == 16:
+        return list(struct.unpack(">%dH" % n, donnees[:2 * n]))
     masque = (1 << nbits) - 1
-    return [(grand >> (total - (k + 1) * nbits)) & masque for k in range(n)]
+    decalages = [nbits * (7 - k) for k in range(8)]
+    sortie = []
+    ajouter = sortie.extend
+    blocs = n // 8
+    for b in range(blocs):
+        g = int.from_bytes(donnees[b * nbits:(b + 1) * nbits], "big")
+        ajouter([(g >> d) & masque for d in decalages])
+    reste = n - blocs * 8
+    if reste:
+        fin = donnees[blocs * nbits:(blocs + 1) * nbits]
+        g = int.from_bytes(fin + bytes(nbits - len(fin)), "big")
+        ajouter([(g >> d) & masque for d in decalages[:reste]])
+    return sortie
 
 
 def lire_message(b: bytes, debut: int, longueur: int) -> Champ:

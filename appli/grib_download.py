@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 from urllib.parse import urlencode
 
+import http.client
 import ssl
 import urllib.error
 import urllib.request
@@ -168,34 +169,50 @@ class SessionHttp:
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
 
-    def _envoyer(self, methode: str, url: str, timeout: float) -> Reponse:
+    def _envoyer(self, methode: str, url: str, timeout: float, rappel=None) -> Reponse:
         req = urllib.request.Request(url, method=methode.upper(), headers=self.headers)
         try:
             with urllib.request.urlopen(req, timeout=timeout, context=self._ctx()) as r:
-                return Reponse(r.status, r.read(), dict(r.headers))
+                if rappel is None:
+                    return Reponse(r.status, r.read(), dict(r.headers))
+                total = int(r.headers.get("Content-Length") or 0)   # gros fichier : avancement affiché
+                morceaux, lu = [], 0
+                while True:
+                    bloc = r.read(65536)
+                    if not bloc:
+                        break
+                    morceaux.append(bloc)
+                    lu += len(bloc)
+                    try:
+                        rappel(lu, total)
+                    except Exception:                       # noqa: BLE001
+                        pass
+                if total and lu < total:
+                    raise ErreurReseau(f"coupure ({lu // 1000} ko reçus sur {total // 1000})")
+                return Reponse(r.status, b"".join(morceaux), dict(r.headers))
         except urllib.error.HTTPError as e:
             return Reponse(e.code, b"", dict(e.headers or {}))
 
-    def requete(self, methode: str, url: str, timeout: float) -> Reponse:
+    def requete(self, methode: str, url: str, timeout: float, rappel=None) -> Reponse:
         try:
-            return self._envoyer(methode, url, timeout)
+            return self._envoyer(methode, url, timeout, rappel)
         except (urllib.error.URLError, ssl.SSLError) as e:
             raison = getattr(e, "reason", e)
             if self.verify and isinstance(raison, ssl.SSLError):
                 self.verify = False
                 try:
-                    return self._envoyer(methode, url, timeout)
-                except (urllib.error.URLError, OSError) as e2:
+                    return self._envoyer(methode, url, timeout, rappel)
+                except (urllib.error.URLError, OSError, http.client.HTTPException) as e2:
                     raise ErreurReseau(str(getattr(e2, "reason", e2)))
             raise ErreurReseau(str(raison))
-        except OSError as e:
-            raise ErreurReseau(str(e))
+        except (OSError, http.client.HTTPException) as e:   # délai dépassé, coupure en cours de route
+            raise ErreurReseau(str(e) or e.__class__.__name__)
 
     def head(self, url, timeout):
         return self.requete("head", url, timeout)
 
-    def get(self, url, timeout):
-        return self.requete("get", url, timeout)
+    def get(self, url, timeout, rappel=None):
+        return self.requete("get", url, timeout, rappel)
 
 
 class Telechargeur:
@@ -222,6 +239,28 @@ class Telechargeur:
     def _pause_globale(self, secondes: float) -> None:
         with self._verrou:
             self._prochain = max(self._prochain, time.monotonic() + secondes)
+
+    def get_robot(self, url: str, timeout: float = 120, debut: int = 0, fin: int = 0, nom: str = "robot") -> Reponse:
+        """Fichier préparé par le robot GitHub : 3 essais (un réseau mobile faible coupe parfois), avec
+        l'avancement affiché de `debut` à `fin` %. ErreurReseau si les 3 essais échouent."""
+        def rappel(lu, total):
+            if total and fin > debut:
+                self.progression(int(debut + (fin - debut) * min(lu, total) / total), 100)
+        raison = "injoignable"
+        for essai in range(3):
+            if self.annule:
+                raise RuntimeError("Téléchargement annulé")
+            try:
+                r = self.s.get(url, timeout, rappel) if isinstance(self.s, SessionHttp) else self.s.get(url, timeout)
+                if r.status_code in (200, 403, 404):        # 404 : inutile de réessayer
+                    return r
+                raison = f"code {r.status_code}"
+            except ErreurReseau as e:
+                raison = f"réseau : {e}"
+            if essai < 2:
+                self.log(f"  {nom} : {raison}, nouvel essai dans {3 + 7 * essai} s…")
+                time.sleep(3 + 7 * essai)
+        raise ErreurReseau(raison)
 
     def courants(self, dest: str, url: str = URL_COURANTS, nom: str = "Courants Copernicus") -> Optional[str]:
         """Télécharge un fichier Copernicus préparé par le robot (courants, marée). None s'il n'est pas disponible."""
@@ -396,10 +435,12 @@ def fichier_robot(tel: "Telechargeur", dossier: str, jours: int, pas: int, coura
     le client a toujours la prévision la plus récente. Renvoie le fichier écrit, ou None (→ téléchargement direct)."""
     url = URL_METEO.format(pas=1 if int(pas) == 1 else 3) + "?t=" + str(int(time.time() // 60))
     tel.log("Fichier météo préparé (robot A.C.I.S)…")
+    tel.progression(1, 100)
     try:
-        r = tel.s.get(url, 180)
+        r = tel.get_robot(url, 180, 2, 70, "fichier du robot")
     except ErreurReseau as e:
-        tel.log(f"  robot indisponible ({e}) : téléchargement direct NOAA")
+        tel.log(f"  robot indisponible ({e}) : téléchargement direct NOAA (plus long)")
+        time.sleep(2)                                   # le temps que l'écran affiche la raison
         return None
     b = r.content
     if r.status_code != 200 or b[:4] != b"GRIB":
@@ -428,17 +469,20 @@ def fichier_robot(tel: "Telechargeur", dossier: str, jours: int, pas: int, coura
     garde = bytearray(b"".join(m for m in _messages(b) if _echeance_message(m) <= max_h))
     heures = heures_fichier(bytes(garde))             # les heures du vent et des vagues
     tel.log(f"  run du {ref:%d/%m %H}h UTC, {len(garde) / 1e6:.1f} Mo")
-    garde = bytearray(ajouter_ciel(tel, bytes(garde), ref, pas, heures))   # pluie + nuages (facultatif)
+    garde = bytearray(ajouter_ciel(tel, bytes(garde), ref, pas, heures, (70, 88)))   # pluie + nuages (facultatif)
+    tel.progression(90, 100)
     if courants:
         try:
-            fc = tel.courants(nom_fichier("courants", dossier, tel.heure))
+            fc = tel.courants(nom_provisoire("courants", dossier))
             if fc:
                 garde += garder_heures(open(fc, "rb").read(), heures)
                 os.remove(fc)
         except Exception as e:
             tel.log(f"  courants non ajoutés : {e}")
     if maree:
+        tel.progression(96, 100)
         telecharger_maree(tel, dossier)
+    tel.progression(100, 100)
     dest = nom_fichier("complet", dossier, tel.heure)
     with open(dest + ".part", "wb") as f:
         f.write(bytes(garde))
@@ -448,12 +492,15 @@ def fichier_robot(tel: "Telechargeur", dossier: str, jours: int, pas: int, coura
 
 def run_robot() -> Optional[dt.datetime]:
     """Run NOAA du fichier publié par le robot (run.txt, 10 octets). None si injoignable."""
-    try:
-        r = SessionHttp().get(URL_RUN + "?t=" + str(int(time.time() // 60)), 20)
-        if r.status_code == 200:
-            return dt.datetime.strptime(r.content[:10].decode("ascii"), "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
-    except Exception:                               # noqa: BLE001
-        pass
+    for essai in range(2):                          # 2 essais : un réseau mobile faible rate parfois le 1er
+        try:
+            r = SessionHttp().get(URL_RUN + "?t=" + str(int(time.time() // 60)), 20)
+            if r.status_code == 200:
+                return dt.datetime.strptime(r.content[:10].decode("ascii"), "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
+        except Exception:                           # noqa: BLE001
+            pass
+        if essai == 0:
+            time.sleep(2)
     return None
 
 
@@ -477,13 +524,14 @@ def a_pluie_nuages(b: bytes) -> bool:
     return any(_parametre(m) in PLUIE_NUAGES for m in _messages(b))
 
 
-def ajouter_ciel(tel: "Telechargeur", garde: bytes, ref, pas: int, heures: set = None) -> bytes:
+def ajouter_ciel(tel: "Telechargeur", garde: bytes, ref, pas: int, heures: set = None, avancement=(0, 0)) -> bytes:
     """Ajoute la pluie et les nuages préparés par le robot, seulement s'ils sont du MÊME run que `garde`
     (sinon les heures ne correspondraient pas). Facultatif : en cas d'échec, `garde` est rendu tel quel."""
     if ref is None:
         return garde
     try:
-        rc = tel.s.get(URL_CIEL.format(pas=1 if int(pas) == 1 else 3) + "?t=" + str(int(time.time() // 60)), 120)
+        rc = tel.get_robot(URL_CIEL.format(pas=1 if int(pas) == 1 else 3) + "?t=" + str(int(time.time() // 60)), 120,
+                           avancement[0], avancement[1], "pluie et nuages")
         bc = rc.content
         if rc.status_code == 200 and bc[:4] == b"GRIB" and _date_ref(bc) == ref:
             ajout = garder_heures(bc, heures if heures is not None else heures_fichier(garde))
@@ -527,6 +575,12 @@ def telecharger_maree(tel: "Telechargeur", dossier: str) -> Optional[str]:
     except Exception as e:                          # noqa: BLE001
         tel.log(f"  marée non téléchargée : {e}")
         return None
+
+
+def nom_provisoire(prefixe: str, dossier: str) -> str:
+    """Morceau d'un fichier unique en cours de fabrication (jamais pris pour des prévisions)."""
+    os.makedirs(dossier, exist_ok=True)
+    return os.path.join(dossier, f"en_cours_{prefixe}.grb2")
 
 
 def nom_fichier(prefixe: str, dossier: str, heure: dt.datetime) -> str:
