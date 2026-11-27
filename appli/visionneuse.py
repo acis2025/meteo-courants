@@ -1905,9 +1905,18 @@ class Visionneuse:
             return None
 
     def _sources_logo(self) -> list:
-        """Où trouver le logo, dans l'ordre : logo.txt (PNG 256 px en base64, livré par la mise à jour en ligne
-        comme carte.html, ou rangé à côté du programme), puis les logo_*.png de ressources/."""
+        """Où trouver le logo, dans l'ordre : le logo de L'AGENCE livré avec le programme (ressources/logo_256.png :
+        Sfax 22 633 254 ou Kélibia 94 596 447), puis logo.txt (logo Sfax en base64, mise à jour en ligne) en secours."""
         sources = []
+        ici = os.path.dirname(os.path.abspath(__file__))
+        base = getattr(sys, "_MEIPASS", ici)
+        dossiers = (os.path.join(base, "ressources"), ici, os.path.join(ici, "ressources"),
+                    os.path.join(os.path.dirname(ici), "ressources"))
+        for n in ("logo_256.png", "logo_144.png"):
+            for d in dossiers:
+                p = os.path.join(d, n)
+                if os.path.exists(p):
+                    sources.append(("file", p))
         try:
             import maj_en_ligne
             b = maj_en_ligne.ressource("logo.txt")
@@ -1915,10 +1924,6 @@ class Visionneuse:
                 sources.append(("data", b.decode("ascii").strip()))
         except Exception:                            # noqa: BLE001
             pass
-        ici = os.path.dirname(os.path.abspath(__file__))
-        base = getattr(sys, "_MEIPASS", ici)
-        dossiers = (ici, os.path.join(ici, "ressources"), os.path.join(base, "ressources"),
-                    os.path.join(os.path.dirname(ici), "ressources"))
         for d in dossiers:
             p = os.path.join(d, "logo.txt")
             if os.path.exists(p):
@@ -1926,11 +1931,10 @@ class Visionneuse:
                     sources.append(("data", open(p, encoding="ascii").read().strip()))
                 except OSError:
                     pass
-        for n in ("logo_256.png", "logo_144.png", "logo_96.png"):
-            for d in dossiers:
-                p = os.path.join(d, n)
-                if os.path.exists(p):
-                    sources.append(("file", p))
+        for d in dossiers:
+            p = os.path.join(d, "logo_96.png")
+            if os.path.exists(p):
+                sources.append(("file", p))
         return sources
 
     def _logo_filigrane(self):
