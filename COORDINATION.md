@@ -12,7 +12,7 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 | Quoi | Où | Version |
 |---|---|---|
 | Code en ligne (tous les PC et téléphones) | branche `main`, dossier `appli/` → release `appli` | **202611252045** (25/11 20:45) |
-| Carte intégrée au programme PC (« ACIS MétéoNav ») | branche `carte-acis-pc` (conversation du Dell) | 202611272030 — pas encore publiée |
+| Carte intégrée au programme PC (« ACIS MétéoNav ») | branche `carte-acis-pc` (conversation du Dell), commit `77ef199` | 202611272130 — pas encore publiée (attend le test client + accord) |
 | `serveur.py` du téléphone | `appli/en_attente/` (pas dans le paquet en ligne) | version avec jeton restée sur le HP |
 
 ## Règles pour publier (branche `main`, dossier `appli/`)
@@ -29,11 +29,14 @@ Aucun secret ici (dépôt public) : pas de clé, mot de passe, token, code d'act
 
 ## À faire
 
-- [ ] Dell (`carte-acis-pc`) : remplacer `glob` par `os.listdir` dans `fichiers_meteo()` de `meteo_marine.py` (règle 5) ; tester l'exe comme un client ; puis publier avec l'accord de l'utilisateur.
+- [x] Dell (`carte-acis-pc`) : `glob` → `os.listdir` dans `fichiers_meteo()` (fait le 27/11, `77ef199`).
+- [ ] Dell (`carte-acis-pc`) : l'utilisateur teste l'exe comme un client (`Bureau\MeteoMarineTN nouvelle version`, à recompiler avec 202611272130) ; puis refusionner `main` et publier avec son accord.
+- [ ] Générateur de codes (projet local MeteoMarineTN, pas dans ce dépôt) : correction « un renouvellement garde le n° du client » faite le 27/11 dans `generateur.py` et `serveur_gen.py` ; à recompiler (`build_generateur.bat`, `build_generateur_android.bat`).
 - [ ] Republier `serveur.py` (téléphone) avec le jeton du HP, en choisissant le fichier par date (`Tunisie_complet_*`), pas par ordre alphabétique.
 
 ## Journal (le plus récent en haut)
 
+- **27/11 21:30 — Claude Code (Dell, `carte-acis-pc`)** : `glob` → `os.listdir` dans `fichiers_meteo()` (fichiers complets d'abord, morceaux ensuite) ; VERSION 202611272130 ; commit `77ef199`, pas publié. Règle 5 vérifiée sur l'exe Windows 7 actuel (`dist7`, 20/11) : tous les modules importés par `appli/` y sont (aucun nouvel import, `BASE_MIN` inchangé). Avant : fusion de `main` (25/11) dans la branche (`a80da41`), exe de test refait, traces de test effacées sur ce PC. `maj_en_ligne.py`, clés et `INTERDITS` non modifiés.
 - **27/11 20:20 — chat claude.ai** : création de ce fichier. Revue de la branche `carte-acis-pc` : contient bien toutes les corrections de `main` jusqu'au 25/11 20:45 ; syntaxe 3.8 OK ; seul point : `glob` (voir À faire).
 - **25/11 20:45 — chat claude.ai** : publié 202611252045 (un seul rechargement de la carte ; lecture GRIB et calcul de la carte 2 à 3 fois plus rapides).
 - **25/11 13:00 — chat claude.ai** : publié 202611251300 (morceaux d'un téléchargement interrompu : nom provisoire `en_cours_*`, supprimés au téléchargement suivant).
